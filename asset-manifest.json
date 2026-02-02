@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/factorysphere/static/css/main.00dba9ae.css",
-    "main.js": "/factorysphere/static/js/main.dd0d2d73.js",
+    "main.js": "/factorysphere/static/js/main.ae20e39a.js",
     "static/js/453.de302465.chunk.js": "/factorysphere/static/js/453.de302465.chunk.js",
     "static/media/logo.png": "/factorysphere/static/media/logo.8b6e889ccd5f12ab5865.png",
     "static/media/inter-latin-ext-600-normal.woff": "/factorysphere/static/media/inter-latin-ext-600-normal.4d0d5017d71ea1750fc1.woff",
@@ -76,11 +76,11 @@
     "static/media/inter-vietnamese-400-normal.woff2": "/factorysphere/static/media/inter-vietnamese-400-normal.44c9df135eec470b0ab6.woff2",
     "index.html": "/factorysphere/index.html",
     "main.00dba9ae.css.map": "/factorysphere/static/css/main.00dba9ae.css.map",
-    "main.dd0d2d73.js.map": "/factorysphere/static/js/main.dd0d2d73.js.map",
+    "main.ae20e39a.js.map": "/factorysphere/static/js/main.ae20e39a.js.map",
     "453.de302465.chunk.js.map": "/factorysphere/static/js/453.de302465.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.00dba9ae.css",
-    "static/js/main.dd0d2d73.js"
+    "static/js/main.ae20e39a.js"
   ]
 }
