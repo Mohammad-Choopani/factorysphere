@@ -2,6 +2,7 @@
   "name": "factorysphere",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://Mohammad-Choopani.github.io/factorysphere",
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -24,6 +25,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -46,6 +49,7 @@
     ]
   },
   "devDependencies": {
+    "gh-pages": "^6.3.0",
     "pwa-asset-generator": "^8.1.2"
   }
 }
