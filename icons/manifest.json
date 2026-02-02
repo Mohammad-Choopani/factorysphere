@@ -3,7 +3,7 @@
   "short_name": "FactorySphere",
   "name": "FactorySphere — Industrial Command Center",
   "description": "Industrial control center UI (Phase A) — future-ready for RBAC and factory integrations.",
-  "start_url": "/factorysphere/",
+  "start_url": "/factorysphere/#/",
   "scope": "/factorysphere/",
   "display": "standalone",
   "background_color": "#070A12",
