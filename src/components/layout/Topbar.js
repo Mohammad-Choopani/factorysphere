@@ -1,11 +1,21 @@
 import React from "react";
-import { AppBar, Toolbar, Box, Typography, Button, Chip, IconButton, Tooltip } from "@mui/material";
+import { AppBar, Toolbar, Box, Typography, Button, Chip, IconButton, Tooltip, Stack } from "@mui/material";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import logo from "../../assets/logo.png";
+
+function getShiftInfo(now = new Date()) {
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const minutes = h * 60 + m;
+
+  if (minutes >= 360 && minutes < 840) return { key: "A", label: "Shift A" };
+  if (minutes >= 840 && minutes < 1320) return { key: "B", label: "Shift B" };
+  return { key: "C", label: "Shift C" };
+}
 
 function BrandLogo() {
   return (
@@ -24,38 +34,8 @@ function BrandLogo() {
           "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
         boxShadow:
           "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
-        "@keyframes ringSpin": {
-          from: { transform: "rotate(0deg)" },
-          to: { transform: "rotate(360deg)" },
-        },
-        "@keyframes glowPulse": {
-          "0%": { opacity: 0.35 },
-          "50%": { opacity: 0.7 },
-          "100%": { opacity: 0.35 },
-        },
       }}
     >
-      <Box
-        sx={{
-          position: "absolute",
-          inset: -10,
-          borderRadius: "999px",
-          border: "1px solid rgba(90,120,255,0.22)",
-          animation: "ringSpin 10s linear infinite",
-          pointerEvents: "none",
-        }}
-      />
-      <Box
-        sx={{
-          position: "absolute",
-          inset: -20,
-          background: "radial-gradient(circle at 50% 50%, rgba(90,120,255,0.22), transparent 60%)",
-          filter: "blur(10px)",
-          animation: "glowPulse 2.6s ease-in-out infinite",
-          pointerEvents: "none",
-        }}
-      />
-
       <Box
         component="img"
         src={logo}
@@ -79,6 +59,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
 
   const role = localStorage.getItem("role") || "UnknownRole";
   const email = localStorage.getItem("userEmail") || "unknown@local";
+  const shift = getShiftInfo();
 
   const handleLogout = () => {
     localStorage.removeItem("role");
@@ -107,8 +88,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                   ? "Expand sidebar"
                   : "Collapse sidebar"
                 : mobileOpen
-                  ? "Close menu"
-                  : "Open menu"
+                ? "Close menu"
+                : "Open menu"
             }
           >
             <IconButton
@@ -153,13 +134,14 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                 color: "rgba(255,255,255,0.62)",
               }}
             >
-              Industrial Command Center
+              Plant 3 • {shift.label}
             </Typography>
           </Box>
         </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
           <Chip size="small" label={role} sx={{ fontWeight: 900 }} />
+          <Chip size="small" label={shift.key} sx={{ fontWeight: 900 }} />
 
           <Typography
             variant="body2"
@@ -183,7 +165,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
           >
             Logout
           </Button>
-        </Box>
+        </Stack>
       </Toolbar>
     </AppBar>
   );

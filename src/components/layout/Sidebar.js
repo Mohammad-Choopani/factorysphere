@@ -70,7 +70,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           px: 1.2,
         }}
       >
-        {/* Logo framed */}
         <Box
           sx={{
             width: 44,
@@ -85,30 +84,13 @@ function SidebarContent({ collapsed, onNavigateClose }) {
             overflow: "hidden",
             flexShrink: 0,
             position: "relative",
-            "@keyframes scan": {
-              "0%": { transform: "translateY(-140%)" },
-              "100%": { transform: "translateY(140%)" },
-            },
           }}
         >
           <Box
             component="img"
             src={logo}
             alt="FactorySphere Logo"
-            sx={{ width: 26, height: 26, objectFit: "contain", position: "relative", zIndex: 1 }}
-          />
-          {/* scanline */}
-          <Box
-            sx={{
-              position: "absolute",
-              left: -20,
-              right: -20,
-              height: 22,
-              top: 0,
-              background: "linear-gradient(180deg, transparent, rgba(0,220,255,0.12), transparent)",
-              animation: "scan 2.6s linear infinite",
-              pointerEvents: "none",
-            }}
+            sx={{ width: 26, height: 26, objectFit: "contain" }}
           />
         </Box>
 
@@ -126,7 +108,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
               FactorySphere
             </Typography>
             <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.68)" }}>
-              Industrial Command Center
+              Control Center UI
             </Typography>
           </Box>
         )}
@@ -159,7 +141,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           return (
             <Tooltip
               key={item.path}
-              title={item.label}
+              title={collapsed ? item.label : ""}
               placement="right"
               disableHoverListener={!collapsed}
             >
@@ -217,10 +199,13 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           );
         })}
 
-        {navItems.length === 0 && (
+        {navItems.length === 0 && !collapsed && (
           <Box sx={{ px: 1, py: 2 }}>
-            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.70)" }}>
-              No pages available for this role.
+            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.70)", fontWeight: 700 }}>
+              No modules assigned
+            </Typography>
+            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.62)" }}>
+              Select a Phase A management role on Login.
             </Typography>
           </Box>
         )}
@@ -272,7 +257,6 @@ export default function Sidebar({ isDesktop, isCollapsed, mobileOpen, onCloseMob
     );
   }
 
-  // Desktop fixed sidebar
   const width = collapsed ? UI_SIDEBAR_COLLAPSED : UI_SIDEBAR_EXPANDED;
 
   return (

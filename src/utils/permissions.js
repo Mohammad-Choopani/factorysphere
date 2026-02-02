@@ -1,17 +1,68 @@
+/**
+ * FactorySphere – Page Permissions
+ * Phase A (UI visibility only)
+ * Single Source of Truth for navigation & dashboard access
+ */
+
 import { ROLES } from "./roles";
 
 export const PAGE_PERMISSIONS = {
+  // Core
   dashboard: [
-    ROLES.ADMIN,
-    ROLES.MANAGER,
-    ROLES.ENGINEER,
-    ROLES.OPERATOR,
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.MAINTENANCE_MANAGER,
+    ROLES.QUALITY_MANAGER,
+    ROLES.ENGINEERING_MANAGER,
+    ROLES.SUPERVISOR,
+    ROLES.TEAM_LEADER,
   ],
-  devices: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
-  alarms: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
-  reports: [ROLES.ADMIN, ROLES.MANAGER],
 
-  dataAnalysis: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
-  hr: [ROLES.ADMIN, ROLES.HR],
-  materialPlanning: [ROLES.ADMIN, ROLES.PLANNER],
+  // Digital Twin
+  devices: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.MAINTENANCE_MANAGER,
+    ROLES.ENGINEERING_MANAGER,
+    ROLES.SUPERVISOR,
+    ROLES.TEAM_LEADER,
+  ],
+
+  // Operations
+  alarms: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.MAINTENANCE_MANAGER,
+    ROLES.QUALITY_MANAGER,
+    ROLES.SUPERVISOR,
+  ],
+
+  downtime: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.MAINTENANCE_MANAGER,
+    ROLES.SUPERVISOR,
+    ROLES.TEAM_LEADER,
+  ],
+
+  // Management / Analysis
+  analytics: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.ENGINEERING_MANAGER,
+    ROLES.QUALITY_MANAGER,
+  ],
+
+  reports: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.QUALITY_MANAGER,
+  ],
+
+  // Future / Phase B placeholders
+  cameras: [
+    ROLES.PLANT_MANAGER,
+    ROLES.PRODUCTION_MANAGER,
+    ROLES.MAINTENANCE_MANAGER,
+  ],
 };
