@@ -11,7 +11,11 @@ import {
   Select,
   MenuItem,
   Divider,
+  Stack,
+  Avatar,
 } from "@mui/material";
+
+import logo from "../assets/logo.png";
 
 const ROLES = [
   { key: "PlantManager", label: "Plant Manager" },
@@ -32,8 +36,8 @@ export default function LoginPage() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    const finalEmail = (email || "user@factorysphere.dev").trim();
 
+    const finalEmail = (email || "user@factorysphere.dev").trim();
     localStorage.setItem("role", role);
     localStorage.setItem("userEmail", finalEmail);
 
@@ -51,17 +55,41 @@ export default function LoginPage() {
           "radial-gradient(1200px 600px at 20% 20%, rgba(124,92,255,0.20), transparent 60%), linear-gradient(180deg, #050611 0%, #070A12 50%, #060818 100%)",
       }}
     >
-      <Paper sx={{ width: "min(520px, 100%)", p: { xs: 3, md: 4 }, borderRadius: 4 }}>
-        <Typography variant="h5" sx={{ fontWeight: 900, letterSpacing: -0.2 }}>
-          FactorySphere
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6 }}>
-          Dev-mode authentication (Phase A)
-        </Typography>
+      <Paper
+        sx={{
+          width: "min(520px, 100%)",
+          p: { xs: 3, md: 4 },
+          borderRadius: 4,
+        }}
+      >
+        {/* Header */}
+        <Stack direction="row" spacing={1.6} alignItems="center">
+          <Avatar
+            src={logo}
+            alt="FactorySphere"
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "transparent",
+            }}
+          />
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 900, letterSpacing: -0.3 }}
+          >
+            FactorySphere
+          </Typography>
+        </Stack>
 
         <Divider sx={{ my: 2.2 }} />
 
-        <Box component="form" onSubmit={handleLogin} sx={{ display: "grid", gap: 2 }}>
+        {/* Form */}
+        <Box
+          component="form"
+          onSubmit={handleLogin}
+          sx={{ display: "grid", gap: 2 }}
+        >
           <TextField
             label="Email"
             value={email}
