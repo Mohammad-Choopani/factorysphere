@@ -1,0 +1,17 @@
+import { ROLES } from "./roles";
+
+export const PAGE_PERMISSIONS = {
+  dashboard: [
+    ROLES.ADMIN,
+    ROLES.MANAGER,
+    ROLES.ENGINEER,
+    ROLES.OPERATOR,
+  ],
+  devices: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
+  alarms: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
+  reports: [ROLES.ADMIN, ROLES.MANAGER],
+
+  dataAnalysis: [ROLES.ADMIN, ROLES.MANAGER, ROLES.ENGINEER],
+  hr: [ROLES.ADMIN, ROLES.HR],
+  materialPlanning: [ROLES.ADMIN, ROLES.PLANNER],
+};
