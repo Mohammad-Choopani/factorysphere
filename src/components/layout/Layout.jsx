@@ -28,10 +28,21 @@ export default function Layout() {
 
   const closeMobile = () => setMobileOpen(false);
 
-  const sidebarWidth = isDesktop ? (isCollapsed ? UI_SIDEBAR_COLLAPSED : UI_SIDEBAR_EXPANDED) : 0;
+  const sidebarWidth = isDesktop
+    ? isCollapsed
+      ? UI_SIDEBAR_COLLAPSED
+      : UI_SIDEBAR_EXPANDED
+    : 0;
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100dvh",
+        width: "100%",
+        overflow: "hidden",
+      }}
+    >
       <Sidebar
         isDesktop={isDesktop}
         isCollapsed={isCollapsed}
@@ -47,6 +58,8 @@ export default function Layout() {
           flexDirection: "column",
           ml: { xs: 0, md: `${sidebarWidth}px` },
           transition: { md: "margin-left 220ms ease" },
+          width: "100%",
+          overflow: "hidden",
         }}
       >
         <Topbar
@@ -56,7 +69,17 @@ export default function Layout() {
           onHamburger={handleHamburger}
         />
 
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        {/* Scroll container */}
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            WebkitOverflowScrolling: "touch",
+            pb: "var(--safe-bottom)",
+          }}
+        >
           <Outlet />
         </Box>
       </Box>

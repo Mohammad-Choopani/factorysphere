@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Divider, Tooltip, Typography, Chip, Drawer } from "@mui/material";
+import { Box, Divider, Tooltip, Typography, Chip, Drawer, Stack } from "@mui/material";
 import { NavLink, useLocation } from "react-router-dom";
 
 import DashboardIcon from "@mui/icons-material/Dashboard";
@@ -31,6 +31,50 @@ const ALL_NAV_ITEMS = [
 function canAccess(role, pageKey) {
   const allowed = PAGE_PERMISSIONS?.[pageKey] || [];
   return allowed.includes(role);
+}
+
+function LiveBadge() {
+  return (
+    <Tooltip title="Phase A: Mock Live (no real-time yet)" placement="top" arrow>
+      <Chip
+        size="small"
+        label="LIVE"
+        sx={{
+          height: 20,
+          flexShrink: 0,
+          fontWeight: 900,
+          letterSpacing: 0.6,
+          color: "rgba(255,255,255,0.92)",
+          border: "1px solid rgba(255,255,255,0.14)",
+          background: "linear-gradient(90deg, rgba(0,220,255,0.22), rgba(120,90,255,0.22))",
+          position: "relative",
+          cursor: "default",
+          userSelect: "none",
+          "&:hover": {
+            transform: "translateY(-1px)",
+            filter: "brightness(1.08)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          },
+          transition: "transform 160ms ease, filter 160ms ease, box-shadow 160ms ease",
+          // subtle pulse ring
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            inset: -6,
+            borderRadius: 999,
+            border: "1px solid rgba(0,220,255,0.20)",
+            opacity: 0.55,
+            animation: "livePulse 1.8s ease-in-out infinite",
+          },
+          "@keyframes livePulse": {
+            "0%": { transform: "scale(0.98)", opacity: 0.25 },
+            "50%": { transform: "scale(1.06)", opacity: 0.55 },
+            "100%": { transform: "scale(0.98)", opacity: 0.25 },
+          },
+        }}
+      />
+    </Tooltip>
+  );
 }
 
 function SidebarContent({ collapsed, onNavigateClose }) {
@@ -66,8 +110,9 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           height: UI_TOPBAR_HEIGHT,
           display: "flex",
           alignItems: "center",
-          gap: 1,
           px: 1.2,
+          gap: 1,
+          overflow: "hidden",
         }}
       >
         <Box
@@ -77,8 +122,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
             borderRadius: "50%",
             display: "grid",
             placeItems: "center",
-            background:
-              "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
+            background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
             border: "1px solid rgba(255,255,255,0.12)",
             boxShadow: "0 10px 22px rgba(0,0,0,0.45), 0 0 0 1px rgba(120,90,255,0.10) inset",
             overflow: "hidden",
@@ -86,48 +130,55 @@ function SidebarContent({ collapsed, onNavigateClose }) {
             position: "relative",
           }}
         >
-          <Box
-            component="img"
-            src={logo}
-            alt="FactorySphere Logo"
-            sx={{ width: 26, height: 26, objectFit: "contain" }}
-          />
+          <Box component="img" src={logo} alt="FactorySphere Logo" sx={{ width: 26, height: 26, objectFit: "contain" }} />
         </Box>
 
         {!collapsed && (
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography
+                sx={{
+                  fontWeight: 900,
+                  color: "rgba(255,255,255,0.92)",
+                  lineHeight: 1.05,
+                  letterSpacing: 0.2,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                FactorySphere
+              </Typography>
+
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "rgba(255,255,255,0.68)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Control Center UI
+              </Typography>
+            </Box>
+
+            <Chip
+              size="small"
+              label="PHASE A"
               sx={{
+                flexShrink: 0,
+                height: 22,
                 fontWeight: 900,
+                letterSpacing: 0.7,
                 color: "rgba(255,255,255,0.92)",
-                lineHeight: 1.05,
+                background: "linear-gradient(90deg, rgba(0,220,255,0.18), rgba(120,90,255,0.18))",
+                border: "1px solid rgba(255,255,255,0.10)",
                 whiteSpace: "nowrap",
-                letterSpacing: 0.3,
+                display: { xs: "none", sm: "inline-flex" },
               }}
-            >
-              FactorySphere
-            </Typography>
-            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.68)" }}>
-              Control Center UI
-            </Typography>
-          </Box>
-        )}
-
-        <Box sx={{ flex: 1 }} />
-
-        {!collapsed && (
-          <Chip
-            size="small"
-            label="PHASE A"
-            sx={{
-              height: 22,
-              fontWeight: 900,
-              letterSpacing: 0.8,
-              color: "rgba(255,255,255,0.92)",
-              background: "linear-gradient(90deg, rgba(0,220,255,0.18), rgba(120,90,255,0.18))",
-              border: "1px solid rgba(255,255,255,0.10)",
-            }}
-          />
+            />
+          </Stack>
         )}
       </Box>
 
@@ -165,33 +216,29 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                   border: active ? "1px solid rgba(120,90,255,0.22)" : "1px solid transparent",
                   "&:hover": {
                     borderColor: "rgba(255,255,255,0.10)",
-                    background:
-                      "linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
+                    background: "linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
                   },
+                  overflow: "hidden",
                 }}
               >
                 {item.icon}
 
                 {!collapsed && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontWeight: 850, whiteSpace: "nowrap" }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1 }}>
+                    <Typography
+                      sx={{
+                        fontWeight: 850,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        minWidth: 0,
+                      }}
+                    >
                       {item.label}
                     </Typography>
 
-                    {item.badge && (
-                      <Chip
-                        size="small"
-                        label={item.badge}
-                        sx={{
-                          height: 20,
-                          fontWeight: 900,
-                          letterSpacing: 0.6,
-                          color: "rgba(255,255,255,0.92)",
-                          background:
-                            "linear-gradient(90deg, rgba(0,220,255,0.22), rgba(120,90,255,0.22))",
-                        }}
-                      />
-                    )}
+                    {/* ✅ interactive LIVE badge */}
+                    {item.badge === "LIVE" ? <LiveBadge /> : null}
                   </Box>
                 )}
               </Box>

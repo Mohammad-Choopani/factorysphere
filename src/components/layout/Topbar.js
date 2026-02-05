@@ -1,10 +1,22 @@
 import React from "react";
-import { AppBar, Toolbar, Box, Typography, Button, Chip, IconButton, Tooltip, Stack } from "@mui/material";
+import {
+  AppBar,
+  Toolbar,
+  Box,
+  Typography,
+  Button,
+  Chip,
+  IconButton,
+  Tooltip,
+  Stack,
+  useMediaQuery,
+} from "@mui/material";
+
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import { useLocation, useNavigate } from "react-router-dom";
 
+import { useLocation, useNavigate } from "react-router-dom";
 import logo from "../../assets/logo.png";
 
 function getShiftInfo(now = new Date()) {
@@ -30,10 +42,8 @@ function BrandLogo() {
         overflow: "hidden",
         flexShrink: 0,
         border: "1px solid rgba(255,255,255,0.14)",
-        background:
-          "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
-        boxShadow:
-          "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
+        background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
+        boxShadow: "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
       }}
     >
       <Box
@@ -56,6 +66,7 @@ function BrandLogo() {
 export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const isXs = useMediaQuery("(max-width: 520px)");
 
   const role = localStorage.getItem("role") || "UnknownRole";
   const email = localStorage.getItem("userEmail") || "unknown@local";
@@ -79,7 +90,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 2, minHeight: 64 }}>
+      <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 1.2, minHeight: 64 }}>
+        {/* Left */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, minWidth: 0 }}>
           <Tooltip
             title={
@@ -139,8 +151,9 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
           </Box>
         </Box>
 
+        {/* Right */}
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-          <Chip size="small" label={role} sx={{ fontWeight: 900 }} />
+          {!isXs && <Chip size="small" label={role} sx={{ fontWeight: 900 }} />}
           <Chip size="small" label={shift.key} sx={{ fontWeight: 900 }} />
 
           <Typography
@@ -153,18 +166,37 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
             {email}
           </Typography>
 
-          <Button
-            variant="outlined"
-            startIcon={<LogoutRoundedIcon />}
-            onClick={handleLogout}
-            sx={{
-              borderColor: "rgba(255,255,255,0.16)",
-              color: "rgba(255,255,255,0.86)",
-              "&:hover": { borderColor: "rgba(255,255,255,0.30)" },
-            }}
-          >
-            Logout
-          </Button>
+          {isXs ? (
+            <Tooltip title="Logout">
+              <IconButton
+                onClick={handleLogout}
+                aria-label="logout"
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 2.5,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(255,255,255,0.86)",
+                }}
+              >
+                <LogoutRoundedIcon />
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="outlined"
+              startIcon={<LogoutRoundedIcon />}
+              onClick={handleLogout}
+              sx={{
+                borderColor: "rgba(255,255,255,0.16)",
+                color: "rgba(255,255,255,0.86)",
+                "&:hover": { borderColor: "rgba(255,255,255,0.30)" },
+              }}
+            >
+              Logout
+            </Button>
+          )}
         </Stack>
       </Toolbar>
     </AppBar>
