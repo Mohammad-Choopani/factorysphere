@@ -18,7 +18,6 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 import { useLocation, useNavigate } from "react-router-dom";
 import logo from "../../assets/logo.png";
-import useAuth from "../../auth/useAuth";
 
 function getShiftInfo(now = new Date()) {
   const h = now.getHours();
@@ -43,10 +42,8 @@ function BrandLogo() {
         overflow: "hidden",
         flexShrink: 0,
         border: "1px solid rgba(255,255,255,0.14)",
-        background:
-          "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
-        boxShadow:
-          "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
+        background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
+        boxShadow: "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
       }}
     >
       <Box
@@ -71,11 +68,13 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
   const location = useLocation();
   const isXs = useMediaQuery("(max-width: 520px)");
 
-  const { role, email, logout } = useAuth();
+  const role = localStorage.getItem("role") || "UnknownRole";
+  const email = localStorage.getItem("userEmail") || "unknown@local";
   const shift = getShiftInfo();
 
   const handleLogout = () => {
-    logout();
+    localStorage.removeItem("role");
+    localStorage.removeItem("userEmail");
     navigate("/", { replace: true, state: { from: location.pathname } });
   };
 
@@ -154,7 +153,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
 
         {/* Right */}
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-          {!isXs && <Chip size="small" label={role || "UnknownRole"} sx={{ fontWeight: 900 }} />}
+          {!isXs && <Chip size="small" label={role} sx={{ fontWeight: 900 }} />}
           <Chip size="small" label={shift.key} sx={{ fontWeight: 900 }} />
 
           <Typography
@@ -164,7 +163,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
               color: "rgba(255,255,255,0.72)",
             }}
           >
-            {email || "unknown@local"}
+            {email}
           </Typography>
 
           {isXs ? (
