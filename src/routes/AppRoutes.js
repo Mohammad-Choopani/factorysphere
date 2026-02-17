@@ -14,14 +14,10 @@ import CamerasPage from "../pages/CamerasPage";
 import ReportsPage from "../pages/ReportsPage";
 
 export default function AppRoutes() {
-  const role = localStorage.getItem("role");
-  const email = localStorage.getItem("userEmail");
-  const isAuthed = Boolean(role && email);
-
   return (
     <Routes>
       {/* Public */}
-      <Route path="/" element={isAuthed ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route path="/" element={<LoginPage />} />
 
       {/* Protected */}
       <Route element={<ProtectedRoute />}>
@@ -37,7 +33,7 @@ export default function AppRoutes() {
       </Route>
 
       {/* Fallback */}
-      <Route path="*" element={<Navigate to={isAuthed ? "/dashboard" : "/"} replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

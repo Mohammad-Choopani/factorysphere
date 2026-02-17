@@ -12,6 +12,7 @@ import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
 
 import logo from "../../assets/logo.png";
 import { PAGE_PERMISSIONS } from "../../utils/permissions";
+import useAuth from "../../auth/useAuth";
 
 // UI constants (must match Layout.jsx)
 const UI_SIDEBAR_COLLAPSED = 76;
@@ -56,7 +57,6 @@ function LiveBadge() {
             boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
           },
           transition: "transform 160ms ease, filter 160ms ease, box-shadow 160ms ease",
-          // subtle pulse ring
           "&::after": {
             content: '""',
             position: "absolute",
@@ -79,12 +79,12 @@ function LiveBadge() {
 
 function SidebarContent({ collapsed, onNavigateClose }) {
   const location = useLocation();
-  const role = localStorage.getItem("role") || "—";
+  const { role } = useAuth();
 
   const width = collapsed ? UI_SIDEBAR_COLLAPSED : UI_SIDEBAR_EXPANDED;
 
   const navItems = React.useMemo(() => {
-    return ALL_NAV_ITEMS.filter((item) => canAccess(role, item.key));
+    return ALL_NAV_ITEMS.filter((item) => canAccess(role || "—", item.key));
   }, [role]);
 
   return (
@@ -190,12 +190,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           const active = location.pathname === item.path;
 
           return (
-            <Tooltip
-              key={item.path}
-              title={collapsed ? item.label : ""}
-              placement="right"
-              disableHoverListener={!collapsed}
-            >
+            <Tooltip key={item.path} title={collapsed ? item.label : ""} placement="right" disableHoverListener={!collapsed}>
               <Box
                 component={NavLink}
                 to={item.path}
@@ -237,7 +232,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                       {item.label}
                     </Typography>
 
-                    {/* ✅ interactive LIVE badge */}
                     {item.badge === "LIVE" ? <LiveBadge /> : null}
                   </Box>
                 )}
@@ -269,7 +263,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           borderTop: "1px solid rgba(255,255,255,0.08)",
         }}
       >
-        <Typography variant="caption">{collapsed ? role : `Role: ${role}`}</Typography>
+        <Typography variant="caption">{collapsed ? (role || "—") : `Role: ${role || "—"}`}</Typography>
       </Box>
     </Box>
   );

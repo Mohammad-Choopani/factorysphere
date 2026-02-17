@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 
 import logo from "../assets/logo.png";
+import useAuth from "../auth/useAuth";
 
 const ROLES = [
   { key: "PlantManager", label: "Plant Manager" },
@@ -29,6 +30,7 @@ const ROLES = [
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -38,8 +40,7 @@ export default function LoginPage() {
     e.preventDefault();
 
     const finalEmail = (email || "user@factorysphere.dev").trim();
-    localStorage.setItem("role", role);
-    localStorage.setItem("userEmail", finalEmail);
+    login(role, finalEmail);
 
     navigate("/dashboard", { replace: true });
   };
@@ -74,10 +75,7 @@ export default function LoginPage() {
               bgcolor: "transparent",
             }}
           />
-          <Typography
-            variant="h5"
-            sx={{ fontWeight: 900, letterSpacing: -0.3 }}
-          >
+          <Typography variant="h5" sx={{ fontWeight: 900, letterSpacing: -0.3 }}>
             FactorySphere
           </Typography>
         </Stack>
@@ -85,11 +83,7 @@ export default function LoginPage() {
         <Divider sx={{ my: 2.2 }} />
 
         {/* Form */}
-        <Box
-          component="form"
-          onSubmit={handleLogin}
-          sx={{ display: "grid", gap: 2 }}
-        >
+        <Box component="form" onSubmit={handleLogin} sx={{ display: "grid", gap: 2 }}>
           <TextField
             label="Email"
             value={email}
