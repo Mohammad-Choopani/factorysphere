@@ -1,3 +1,4 @@
+// src/components/layout/Topbar.js
 import React from "react";
 import {
   AppBar,
@@ -29,34 +30,42 @@ function getShiftInfo(now = new Date()) {
   return { key: "C", label: "Shift C" };
 }
 
-function BrandLogo() {
+function BrandLogo({ size = 44 }) {
   return (
     <Box
       sx={{
-        width: 44,
-        height: 44,
-        borderRadius: "999px",
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background: "#ffffff",
         display: "grid",
         placeItems: "center",
-        position: "relative",
         overflow: "hidden",
         flexShrink: 0,
         border: "1px solid rgba(255,255,255,0.14)",
-        background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
-        boxShadow: "0 16px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(120,90,255,0.10) inset",
+        boxShadow: "0 14px 40px rgba(0,0,0,0.40)",
+        cursor: "pointer",
+        userSelect: "none",
+        transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
+        "&:hover": {
+          transform: "translateY(-1px) scale(1.03)",
+          boxShadow: "0 18px 55px rgba(0,0,0,0.50), 0 0 0 3px rgba(124,92,255,0.18)",
+          filter: "brightness(1.02)",
+        },
+        "&:active": { transform: "translateY(0px) scale(0.99)" },
       }}
+      aria-label="brand"
     >
       <Box
         component="img"
         src={logo}
         alt="FactorySphere Logo"
         sx={{
-          width: 26,
-          height: 26,
+          width: "70%",
+          height: "70%",
           objectFit: "contain",
-          position: "relative",
-          zIndex: 1,
-          filter: "drop-shadow(0 8px 14px rgba(0,0,0,0.35))",
+          display: "block",
+          filter: "none",
         }}
       />
     </Box>
@@ -90,7 +99,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 1.2, minHeight: 64 }}>
+      <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 1.2, minHeight: 72 }}>
         {/* Left */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, minWidth: 0 }}>
           <Tooltip
@@ -108,8 +117,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
               onClick={onHamburger}
               aria-label={isDesktop ? "toggle sidebar" : "toggle menu"}
               sx={{
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 borderRadius: 2.5,
                 border: "1px solid rgba(255,255,255,0.12)",
                 background: "rgba(255,255,255,0.04)",
@@ -124,7 +133,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
             </IconButton>
           </Tooltip>
 
-          <BrandLogo />
+          <BrandLogo size={isXs ? 40 : 44} />
 
           <Box sx={{ minWidth: 0 }}>
             <Typography
@@ -135,6 +144,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 lineHeight: 1.05,
+                fontSize: { xs: 18, sm: 20 },
               }}
             >
               FactorySphere
@@ -172,8 +182,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                 onClick={handleLogout}
                 aria-label="logout"
                 sx={{
-                  width: 44,
-                  height: 44,
+                  width: 48,
+                  height: 48,
                   borderRadius: 2.5,
                   border: "1px solid rgba(255,255,255,0.12)",
                   background: "rgba(255,255,255,0.04)",

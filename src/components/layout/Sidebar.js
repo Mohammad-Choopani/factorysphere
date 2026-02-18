@@ -1,3 +1,4 @@
+// src/components/layout/Sidebar.js
 import React from "react";
 import { Box, Divider, Tooltip, Typography, Chip, Drawer, Stack } from "@mui/material";
 import { NavLink, useLocation } from "react-router-dom";
@@ -50,13 +51,12 @@ function LiveBadge() {
           position: "relative",
           cursor: "default",
           userSelect: "none",
+          transition: "transform 160ms ease, filter 160ms ease, box-shadow 160ms ease",
           "&:hover": {
             transform: "translateY(-1px)",
             filter: "brightness(1.08)",
             boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
           },
-          transition: "transform 160ms ease, filter 160ms ease, box-shadow 160ms ease",
-          // subtle pulse ring
           "&::after": {
             content: '""',
             position: "absolute",
@@ -74,6 +74,48 @@ function LiveBadge() {
         }}
       />
     </Tooltip>
+  );
+}
+
+function BrandLogo({ size = 44 }) {
+  return (
+    <Box
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background: "#ffffff",
+        display: "grid",
+        placeItems: "center",
+        overflow: "hidden",
+        flexShrink: 0,
+        border: "1px solid rgba(255,255,255,0.14)",
+        boxShadow: "0 14px 40px rgba(0,0,0,0.40)",
+        cursor: "pointer",
+        userSelect: "none",
+        transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
+        "&:hover": {
+          transform: "translateY(-1px) scale(1.03)",
+          boxShadow: "0 18px 55px rgba(0,0,0,0.50), 0 0 0 3px rgba(124,92,255,0.18)",
+          filter: "brightness(1.02)",
+        },
+        "&:active": { transform: "translateY(0px) scale(0.99)" },
+      }}
+      aria-label="brand"
+    >
+      <Box
+        component="img"
+        src={logo}
+        alt="FactorySphere Logo"
+        sx={{
+          width: "70%",
+          height: "70%",
+          objectFit: "contain",
+          display: "block",
+          filter: "none",
+        }}
+      />
+    </Box>
   );
 }
 
@@ -99,6 +141,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
         borderRight: "1px solid rgba(255,255,255,0.08)",
         backdropFilter: "blur(12px)",
         overflow: "hidden",
+        overflowX: "hidden",
         boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
         display: "flex",
         flexDirection: "column",
@@ -113,29 +156,14 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           px: 1.2,
           gap: 1,
           overflow: "hidden",
+          minWidth: 0,
         }}
       >
-        <Box
-          sx={{
-            width: 44,
-            height: 44,
-            borderRadius: "50%",
-            display: "grid",
-            placeItems: "center",
-            background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.14), rgba(255,255,255,0.02))",
-            border: "1px solid rgba(255,255,255,0.12)",
-            boxShadow: "0 10px 22px rgba(0,0,0,0.45), 0 0 0 1px rgba(120,90,255,0.10) inset",
-            overflow: "hidden",
-            flexShrink: 0,
-            position: "relative",
-          }}
-        >
-          <Box component="img" src={logo} alt="FactorySphere Logo" sx={{ width: 26, height: 26, objectFit: "contain" }} />
-        </Box>
+        <BrandLogo size={44} />
 
         {!collapsed && (
           <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Box sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
               <Typography
                 sx={{
                   fontWeight: 900,
@@ -145,6 +173,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
+                  minWidth: 0,
                 }}
               >
                 FactorySphere
@@ -157,6 +186,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
+                  minWidth: 0,
                 }}
               >
                 Control Center UI
@@ -185,7 +215,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
       <Divider sx={{ borderColor: "rgba(255,255,255,0.08)" }} />
 
       {/* Navigation */}
-      <Box sx={{ py: 1, px: 1 }}>
+      <Box sx={{ py: 1, px: 1, overflowX: "hidden" }}>
         {navItems.map((item) => {
           const active = location.pathname === item.path;
 
@@ -209,6 +239,9 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                   borderRadius: 2.2,
                   textDecoration: "none",
                   mb: 0.8,
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  overflow: "hidden",
                   color: active ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.70)",
                   background: active
                     ? "linear-gradient(90deg, rgba(120,90,255,0.30), rgba(0,220,255,0.10))"
@@ -218,13 +251,21 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                     borderColor: "rgba(255,255,255,0.10)",
                     background: "linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
                   },
-                  overflow: "hidden",
                 }}
               >
                 {item.icon}
 
                 {!collapsed && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      minWidth: 0,
+                      flex: 1,
+                      overflow: "hidden",
+                    }}
+                  >
                     <Typography
                       sx={{
                         fontWeight: 850,
@@ -232,12 +273,12 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         minWidth: 0,
+                        flex: 1,
                       }}
                     >
                       {item.label}
                     </Typography>
 
-                    {/* ✅ interactive LIVE badge */}
                     {item.badge === "LIVE" ? <LiveBadge /> : null}
                   </Box>
                 )}
@@ -267,9 +308,20 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           py: 1.2,
           color: "rgba(255,255,255,0.60)",
           borderTop: "1px solid rgba(255,255,255,0.08)",
+          overflow: "hidden",
         }}
       >
-        <Typography variant="caption">{collapsed ? role : `Role: ${role}`}</Typography>
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {collapsed ? role : `Role: ${role}`}
+        </Typography>
       </Box>
     </Box>
   );

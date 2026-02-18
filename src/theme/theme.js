@@ -1,6 +1,16 @@
+// src/theme/theme.js
 import { createTheme } from "@mui/material/styles";
 
 const theme = createTheme({
+  breakpoints: {
+    values: {
+      xs: 0,
+      sm: 600,
+      md: 900,
+      lg: 1200,
+      xl: 1536,
+    },
+  },
   palette: {
     mode: "dark",
     background: {
@@ -22,13 +32,38 @@ const theme = createTheme({
   typography: {
     fontFamily:
       '"Inter", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-    h4: { fontWeight: 800, letterSpacing: -0.3 },
-    h6: { fontWeight: 700, letterSpacing: -0.2 },
+    h4: { fontWeight: 800, letterSpacing: -0.3, fontSize: "1.6rem" },
+    h5: { fontWeight: 800, letterSpacing: -0.25, fontSize: "1.25rem" },
+    h6: { fontWeight: 700, letterSpacing: -0.2, fontSize: "1.05rem" },
+    subtitle1: { fontWeight: 700, opacity: 0.95 },
     body1: { fontWeight: 500 },
     body2: { fontWeight: 500 },
+    caption: { fontWeight: 600, opacity: 0.82 },
     button: { textTransform: "none", fontWeight: 700 },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          backgroundImage:
+            "radial-gradient(1200px 600px at 20% 0%, rgba(124, 92, 255, 0.12), transparent 60%), radial-gradient(900px 500px at 90% 20%, rgba(45, 226, 230, 0.10), transparent 55%)",
+          backgroundAttachment: "fixed",
+        },
+      },
+    },
+
+    MuiContainer: {
+      defaultProps: {
+        maxWidth: "xl",
+      },
+      styleOverrides: {
+        root: {
+          paddingLeft: 16,
+          paddingRight: 16,
+        },
+      },
+    },
+
     MuiPaper: {
       styleOverrides: {
         root: {
@@ -40,6 +75,7 @@ const theme = createTheme({
         },
       },
     },
+
     MuiButton: {
       styleOverrides: {
         root: {
@@ -63,9 +99,11 @@ const theme = createTheme({
         },
       },
     },
+
     MuiTextField: {
       defaultProps: { size: "medium" },
     },
+
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
@@ -83,6 +121,7 @@ const theme = createTheme({
         notchedOutline: { borderColor: "rgba(255,255,255,0.12)" },
       },
     },
+
     MuiChip: {
       styleOverrides: {
         root: {

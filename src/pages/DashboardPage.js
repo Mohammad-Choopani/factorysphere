@@ -1,3 +1,4 @@
+// src/pages/DashboardPage.js
 import React from "react";
 import {
   Box,
@@ -12,6 +13,7 @@ import {
   Tooltip,
   TextField,
   InputAdornment,
+  useTheme,
   useMediaQuery,
 } from "@mui/material";
 
@@ -26,6 +28,10 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import FilterAltRoundedIcon from "@mui/icons-material/FilterAltRounded";
 import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import PauseCircleFilledRoundedIcon from "@mui/icons-material/PauseCircleFilledRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 
 import { useNavigate } from "react-router-dom";
 import { PAGE_PERMISSIONS } from "../utils/permissions";
@@ -51,9 +57,12 @@ function CardShell({ children, sx, onClick, role = "region" }) {
       role={role}
       onClick={onClick}
       sx={{
-        p: { xs: 1.8, sm: 2.2 },
+        p: { xs: 1.6, sm: 2.1 },
         borderRadius: 4,
         height: "100%",
+        maxWidth: "100%",
+        position: "relative",
+        overflow: "hidden", // ✅ prevents any chip/text bleeding outside
         background: "rgba(0,0,0,0.18)",
         border: "1px solid rgba(255,255,255,0.08)",
         transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease",
@@ -89,8 +98,6 @@ function KpiTile({ label, value, hint, tone = "primary" }) {
   return (
     <CardShell
       sx={{
-        position: "relative",
-        overflow: "hidden",
         "@keyframes dashIn": {
           from: { opacity: 0, transform: "translateY(8px)" },
           to: { opacity: 1, transform: "translateY(0px)" },
@@ -106,7 +113,7 @@ function KpiTile({ label, value, hint, tone = "primary" }) {
       }}
     >
       <Box sx={{ position: "relative" }}>
-        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 800, letterSpacing: 0.2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 900, letterSpacing: 0.2 }}>
           {label}
         </Typography>
         <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4, mt: 0.5 }}>
@@ -122,13 +129,58 @@ function KpiTile({ label, value, hint, tone = "primary" }) {
   );
 }
 
+function StatPill({ icon, label, value, sx }) {
+  return (
+    <Paper
+      sx={{
+        p: 1.2,
+        borderRadius: 3,
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        display: "flex",
+        alignItems: "center",
+        gap: 1.2,
+        overflow: "hidden",
+        ...sx,
+      }}
+    >
+      <Box
+        sx={{
+          width: 40,
+          height: 40,
+          borderRadius: 3,
+          display: "grid",
+          placeItems: "center",
+          background: "rgba(124,92,255,0.12)",
+          border: "1px solid rgba(124,92,255,0.22)",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        >
+          {label}
+        </Typography>
+        <Typography sx={{ fontWeight: 950, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {value}
+        </Typography>
+      </Box>
+    </Paper>
+  );
+}
+
 function ModuleRow({ icon, title, subtitle, badge, onClick }) {
   return (
     <CardShell
       onClick={onClick}
       role="button"
       sx={{
-        p: 1.35,
+        p: 1.25,
         borderRadius: 3,
         background: "rgba(255,255,255,0.03)",
         display: "flex",
@@ -151,7 +203,7 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
         {icon}
       </Box>
 
-      <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Box sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
           <Typography
             sx={{
@@ -160,14 +212,19 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
               overflow: "hidden",
               textOverflow: "ellipsis",
               lineHeight: 1.1,
+              minWidth: 0,
             }}
           >
             {title}
           </Typography>
-          {badge ? <Chip size="small" label={badge} sx={{ height: 22, fontWeight: 900 }} /> : null}
+          {badge ? <Chip size="small" label={badge} sx={{ height: 22, fontWeight: 900, flexShrink: 0 }} /> : null}
         </Stack>
 
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        >
           {subtitle}
         </Typography>
       </Box>
@@ -177,9 +234,107 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
   );
 }
 
+function SimpleList({ title, rows, rightBadge }) {
+  return (
+    <CardShell>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}
+      >
+        <Typography
+          sx={{
+            fontWeight: 950,
+            minWidth: 0,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </Typography>
+
+        {rightBadge ? (
+          <Chip
+            size="small"
+            label={rightBadge}
+            sx={{
+              flexShrink: 0,
+              maxWidth: "50%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          />
+        ) : null}
+      </Stack>
+
+      <Divider sx={{ my: 1.4 }} />
+
+      <Box sx={{ display: "grid", gap: 1 }}>
+        {rows.map((r) => (
+          <Paper
+            key={r.id}
+            sx={{
+              p: 1.1,
+              borderRadius: 3,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1.2,
+              overflow: "hidden", // ✅ stop badge from bleeding
+            }}
+          >
+            <Box sx={{ minWidth: 0, overflow: "hidden" }}>
+              <Typography
+                sx={{
+                  fontWeight: 900,
+                  lineHeight: 1.15,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {r.title}
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+              >
+                {r.sub}
+              </Typography>
+            </Box>
+
+            <Chip
+              size="small"
+              label={r.badge}
+              sx={{
+                height: 22,
+                fontWeight: 900,
+                flexShrink: 0,
+                borderColor: "rgba(255,255,255,0.12)",
+              }}
+            />
+          </Paper>
+        ))}
+
+        {rows.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+            No items.
+          </Typography>
+        )}
+      </Box>
+    </CardShell>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const isMobile = useMediaQuery("(max-width: 899px)");
+  const theme = useTheme();
+  const isMdDown = useMediaQuery(theme.breakpoints.down("md"));
 
   const role = localStorage.getItem("role") || "PlantManager";
   const email = localStorage.getItem("userEmail") || "user@factorysphere.dev";
@@ -248,11 +403,34 @@ export default function DashboardPage() {
     return { label: "Dashboard", path: "/dashboard" };
   }, [role]);
 
+  // Mock executive panels (Phase A)
+  const topAlarms = React.useMemo(
+    () => [
+      { id: "a1", title: "DT-FRT-01 • Safety Gate", sub: "Zone 2 • 2 min ago", badge: "HIGH" },
+      { id: "a2", title: "C1UL-SPOILER • Sensor Fault", sub: "Line 1 • 6 min ago", badge: "MED" },
+      { id: "a3", title: "WINDSHIELD • Robot Pause", sub: "Cell 4 • 11 min ago", badge: "LOW" },
+      { id: "a4", title: "DT-RR-02 • E-Stop", sub: "Zone 1 • 18 min ago", badge: "HIGH" },
+      { id: "a5", title: "PACK-03 • Jam Detected", sub: "Endline • 22 min ago", badge: "MED" },
+    ],
+    []
+  );
+
+  const topDowntime = React.useMemo(
+    () => [
+      { id: "d1", title: "Changeover", sub: "18 min • Shift " + shift.key, badge: "PLANNED" },
+      { id: "d2", title: "Waiting Components", sub: "9 min • Line 2", badge: "SUPPLY" },
+      { id: "d3", title: "Quality Check", sub: "6 min • Station 7", badge: "QC" },
+      { id: "d4", title: "Maintenance", sub: "4 min • Robot Cell", badge: "MAINT" },
+      { id: "d5", title: "Meeting/Break", sub: "1 min • Floor", badge: "SHIFT" },
+    ],
+    [shift.key]
+  );
+
   return (
     <Box
       sx={{
-        px: { xs: 1.4, sm: 2.2, md: 3 },
-        py: { xs: 1.6, sm: 2.2, md: 3 },
+        px: { xs: 1.2, sm: 2.2, md: 3 },
+        py: { xs: 1.4, sm: 2.2, md: 3 },
         background: `
           radial-gradient(1100px 560px at 15% 8%, rgba(124,92,255,0.14), transparent 60%),
           radial-gradient(900px 520px at 92% 16%, rgba(45,226,230,0.10), transparent 55%),
@@ -260,25 +438,27 @@ export default function DashboardPage() {
         `,
       }}
     >
-      {/* Top Header */}
-      <CardShell sx={{ p: { xs: 1.6, sm: 2.2 }, mb: { xs: 1.4, sm: 2 } }}>
+      {/* Header */}
+      <CardShell sx={{ p: { xs: 1.5, sm: 2.1 }, mb: { xs: 1.2, sm: 2 } }}>
         <Stack
           direction={{ xs: "column", md: "row" }}
-          spacing={{ xs: 1.2, md: 1.6 }}
+          spacing={{ xs: 1.1, md: 1.6 }}
           alignItems={{ xs: "flex-start", md: "center" }}
           justifyContent="space-between"
+          sx={{ minWidth: 0 }}
         >
           <Box sx={{ minWidth: 0 }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-              <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 950, letterSpacing: -0.3 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flexWrap: "wrap" }}>
+              <Typography variant={isMdDown ? "h6" : "h5"} sx={{ fontWeight: 950, letterSpacing: -0.3 }}>
                 Control Center
               </Typography>
               <Chip size="small" label="Phase A" />
               <Chip size="small" label="Mock" />
+              <Chip size="small" label="Plant 3" />
             </Stack>
 
-            <Typography color="text.secondary" sx={{ mt: 0.4, lineHeight: 1.35 }}>
-              Plant 3 • {shift.label} ({shift.range}) • <b>{role}</b>
+            <Typography color="text.secondary" sx={{ mt: 0.45, lineHeight: 1.35 }}>
+              {shift.label} ({shift.range}) • <b>{role}</b>
               <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>
                 {" "}
                 — {email}
@@ -287,7 +467,7 @@ export default function DashboardPage() {
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-            <Tooltip title="What is Phase A?">
+            <Tooltip title="Phase A scope: UI foundation only">
               <IconButton
                 aria-label="info"
                 sx={{
@@ -302,24 +482,16 @@ export default function DashboardPage() {
               </IconButton>
             </Tooltip>
 
-            <Button
-              variant="contained"
-              endIcon={<ArrowForwardRoundedIcon />}
-              onClick={() => navigate(primaryCta.path)}
-            >
+            <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => navigate(primaryCta.path)}>
               {primaryCta.label}
             </Button>
           </Stack>
         </Stack>
 
-        <Divider sx={{ my: 1.8 }} />
+        <Divider sx={{ my: 1.6 }} />
 
-        {/* Search + quick filter */}
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1}
-          alignItems={{ xs: "stretch", sm: "center" }}
-        >
+        {/* Search */}
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
           <TextField
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -333,19 +505,45 @@ export default function DashboardPage() {
               ),
             }}
           />
-          <Button
-            variant="outlined"
-            startIcon={<FilterAltRoundedIcon />}
-            onClick={() => setQuery("")}
-            sx={{ whiteSpace: "nowrap" }}
-          >
+          <Button variant="outlined" startIcon={<FilterAltRoundedIcon />} onClick={() => setQuery("")} sx={{ whiteSpace: "nowrap" }}>
             Clear
           </Button>
         </Stack>
+
+        {/* Executive quick stats */}
+        <Grid container spacing={1.2} sx={{ mt: 1.4 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <StatPill icon={<TrendingUpRoundedIcon />} label="Running" value="82" />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <StatPill
+              icon={<CancelRoundedIcon />}
+              label="Down"
+              value="8"
+              sx={{ "& > div:first-of-type": { background: "rgba(255,77,109,0.10)", borderColor: "rgba(255,77,109,0.22)" } }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <StatPill
+              icon={<PauseCircleFilledRoundedIcon />}
+              label="Idle"
+              value="10"
+              sx={{ "& > div:first-of-type": { background: "rgba(255,200,87,0.10)", borderColor: "rgba(255,200,87,0.22)" } }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <StatPill
+              icon={<WarningAmberRoundedIcon />}
+              label="Alarms"
+              value="12"
+              sx={{ "& > div:first-of-type": { background: "rgba(45,226,230,0.08)", borderColor: "rgba(45,226,230,0.22)" } }}
+            />
+          </Grid>
+        </Grid>
       </CardShell>
 
       {/* KPI strip */}
-      <Grid container spacing={{ xs: 1.2, sm: 2 }}>
+      <Grid container spacing={{ xs: 1.1, sm: 2 }}>
         <Grid item xs={12} sm={6} lg={3}>
           <KpiTile label="Units Online" value="96 / 100" hint="Placeholder in Phase A." tone="cyan" />
         </Grid>
@@ -361,120 +559,172 @@ export default function DashboardPage() {
       </Grid>
 
       {/* Main content */}
-      <Grid container spacing={{ xs: 1.2, sm: 2 }} sx={{ mt: { xs: 1.2, sm: 2 } }}>
-        {/* Left: Quick actions */}
+      <Grid container spacing={{ xs: 1.1, sm: 2 }} sx={{ mt: { xs: 1.1, sm: 2 } }}>
+        {/* Left column */}
         <Grid item xs={12} lg={5}>
-          <CardShell>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 1 }}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Box
-                  sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 3,
-                    display: "grid",
-                    placeItems: "center",
-                    background: "rgba(45,226,230,0.10)",
-                    border: "1px solid rgba(45,226,230,0.22)",
-                  }}
-                >
-                  <BoltRoundedIcon />
-                </Box>
-                <Box>
-                  <Typography sx={{ fontWeight: 950, lineHeight: 1.1 }}>Quick Actions</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Phase A UI shell (no real actions)
-                  </Typography>
-                </Box>
-              </Stack>
+          <Grid container spacing={{ xs: 1.1, sm: 2 }}>
+            <Grid item xs={12}>
+              <CardShell>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, overflow: "hidden" }}>
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 3,
+                        display: "grid",
+                        placeItems: "center",
+                        background: "rgba(45,226,230,0.10)",
+                        border: "1px solid rgba(45,226,230,0.22)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <BoltRoundedIcon />
+                    </Box>
+                    <Box sx={{ minWidth: 0, overflow: "hidden" }}>
+                      <Typography sx={{ fontWeight: 950, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        Quick Actions
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                      >
+                        Phase A UI shell (no real actions)
+                      </Typography>
+                    </Box>
+                  </Stack>
 
-              <Chip size="small" label="Safe" />
-            </Stack>
+                  <Chip size="small" label="Safe" sx={{ flexShrink: 0 }} />
+                </Stack>
 
-            <Divider sx={{ my: 1.6 }} />
+                <Divider sx={{ my: 1.4 }} />
 
-            <Grid container spacing={1.2}>
-              <Grid item xs={12} sm={6}>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  endIcon={<ArrowForwardRoundedIcon />}
-                  onClick={() => navigate(primaryCta.path)}
-                >
-                  {primaryCta.label}
-                </Button>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={() => {
-                    if (canAccess(role, "alarms")) return navigate("/alarms");
-                    if (canAccess(role, "downtime")) return navigate("/downtime");
-                    return navigate("/dashboard");
-                  }}
-                >
-                  Open Secondary
-                </Button>
-              </Grid>
+                <Grid container spacing={1.2}>
+                  {/* ✅ keep primary CTA only once in this card */}
+                  <Grid item xs={12}>
+                    <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => navigate(primaryCta.path)}>
+                      {primaryCta.label}
+                    </Button>
+                  </Grid>
 
-              <Grid item xs={12}>
-                <Paper
-                  sx={{
-                    p: 1.6,
-                    borderRadius: 3,
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <Typography variant="body2" sx={{ fontWeight: 850 }}>
-                    Current Shift
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    {shift.label} ({shift.range}) • Visibility by role
-                  </Typography>
-                </Paper>
-              </Grid>
+                  <Grid item xs={12}>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      onClick={() => {
+                        if (canAccess(role, "alarms")) return navigate("/alarms");
+                        if (canAccess(role, "downtime")) return navigate("/downtime");
+                        return navigate("/dashboard");
+                      }}
+                    >
+                      Open Secondary
+                    </Button>
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Paper
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 3,
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                        Current Shift
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {shift.label} ({shift.range}) • Visibility by role
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </CardShell>
             </Grid>
-          </CardShell>
+
+            <Grid item xs={12}>
+              <SimpleList title="Top Alarms" rightBadge="Mock" rows={topAlarms} />
+            </Grid>
+          </Grid>
         </Grid>
 
-        {/* Right: Modules */}
+        {/* Right column */}
         <Grid item xs={12} lg={7}>
-          <CardShell>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 1 }}>
-              <Typography sx={{ fontWeight: 950 }}>Modules</Typography>
-              <Chip size="small" label="Permission-based" />
-            </Stack>
+          <Grid container spacing={{ xs: 1.1, sm: 2 }}>
+            <Grid item xs={12}>
+              <SimpleList title="Downtime Drivers" rightBadge="Mock" rows={topDowntime} />
+            </Grid>
 
-            <Divider sx={{ my: 1.6 }} />
+            <Grid item xs={12}>
+              <CardShell>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}
+                >
+                  <Typography
+                    sx={{
+                      fontWeight: 950,
+                      minWidth: 0,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    Modules
+                  </Typography>
 
-            <Box sx={{ display: "grid", gap: 1 }}>
-              {modules.map((m) => (
-                <ModuleRow
-                  key={m.key}
-                  icon={m.icon}
-                  title={m.label}
-                  subtitle={m.desc}
-                  badge={m.badge}
-                  onClick={() => navigate(m.path)}
-                />
-              ))}
+                  <Chip
+                    size="small"
+                    label="Permission-based"
+                    sx={{
+                      flexShrink: 0,
+                      maxWidth: "60%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  />
+                </Stack>
 
-              {modules.length === 0 && (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                  No modules assigned for this role.
-                </Typography>
-              )}
-            </Box>
-          </CardShell>
+                <Divider sx={{ my: 1.4 }} />
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 1,
+                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                  }}
+                >
+                  {modules.map((m) => (
+                    <ModuleRow
+                      key={m.key}
+                      icon={m.icon}
+                      title={m.label}
+                      subtitle={m.desc}
+                      badge={m.badge}
+                      onClick={() => navigate(m.path)}
+                    />
+                  ))}
+                </Box>
+
+                {modules.length === 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ pt: 1 }}>
+                    No modules assigned for this role.
+                  </Typography>
+                )}
+              </CardShell>
+            </Grid>
+          </Grid>
         </Grid>
       </Grid>
 
       {/* Footer hint */}
       <Box
         sx={{
-          mt: { xs: 1.6, sm: 2.2 },
+          mt: { xs: 1.4, sm: 2.2 },
           color: "text.secondary",
           fontSize: 12,
           display: "flex",
@@ -485,7 +735,7 @@ export default function DashboardPage() {
         }}
       >
         <div>Mode: UI Prototype + Mock Data • No real-time required yet</div>
-        <div>Next: RBAC routes + Pro Devices 3D</div>
+        <div>Next: Responsive Layout polish + Sidebar mobile drawer</div>
       </Box>
     </Box>
   );
