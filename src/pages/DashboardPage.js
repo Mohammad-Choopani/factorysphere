@@ -278,23 +278,28 @@ function StatPill({ icon, label, value, sx }) {
 function ModuleRow({ icon, title, subtitle, badge, onClick }) {
   return (
     <CardShell
-      onClick={onClick}
-      role="button"
-      sx={{
-        p: 1.25,
-        borderRadius: UI.rInner,
-        background: "rgba(255,255,255,0.03)",
-        display: "flex",
-        alignItems: "center",
-        gap: 1.2,
-        minHeight: 74,
-        "&:hover": {
-          transform: { xs: "none", md: "translateY(-1px)" },
-          borderColor: "rgba(124,92,255,0.28)",
-          background: "rgba(124,92,255,0.05)",
-        },
-      }}
-    >
+  onClick={onClick}
+  role="button"
+  sx={{
+    p: 1.25,
+    pr: 1.6,              // ✅ extra right padding for arrow
+    width: "100%",        // ✅ ensure full stretch
+    overflow: "hidden",   // ✅ re-enable clipping for rounded corners (mobile safe)
+
+    borderRadius: UI.rInner,
+    background: "rgba(255,255,255,0.03)",
+    display: "flex",
+    alignItems: "center",
+    gap: 1.2,
+    minHeight: 74,
+    "&:hover": {
+      transform: { xs: "none", md: "translateY(-1px)" },
+      borderColor: "rgba(124,92,255,0.28)",
+      background: "rgba(124,92,255,0.05)",
+    },
+  }}
+>
+
       <Box
         sx={{
           width: 44,
