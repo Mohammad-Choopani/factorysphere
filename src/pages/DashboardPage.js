@@ -69,20 +69,32 @@ function EllipChip({ label, sx }) {
       label={label}
       sx={{
         height: 22,
-        fontWeight: 900,
         maxWidth: 140,
         borderRadius: 999,
+        fontWeight: 900,
+
+        // ✅ prevents rounded pill from letting text bleed out on mobile
+        overflow: "hidden",
+        boxSizing: "border-box",
+        alignItems: "center",
+
+        // ✅ normalize label metrics across devices
         "& .MuiChip-label": {
           px: 1,
+          py: 0,
+          lineHeight: "22px",
+          display: "block",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         },
+
         ...sx,
       }}
     />
   );
 }
+
 
 /**
  * ✅ Fix for mobile “text/icon clipped by border”
