@@ -17,16 +17,18 @@ import { PAGE_PERMISSIONS } from "../../utils/permissions";
 // UI constants (must match Layout.jsx)
 const UI_SIDEBAR_COLLAPSED = 76;
 const UI_SIDEBAR_EXPANDED = 268;
-const UI_TOPBAR_HEIGHT = 64;
+
+// ✅ Must match Topbar minHeight on desktop/mobile range
+const UI_TOPBAR_HEIGHT = 72;
 
 const ALL_NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: <DashboardIcon />, badge: "LIVE" },
-  { key: "devices", label: "Stations & Devices", path: "/devices", icon: <PrecisionManufacturingIcon /> },
-  { key: "alarms", label: "Live Alarms", path: "/alarms", icon: <NotificationsActiveIcon /> },
-  { key: "downtime", label: "Downtime & Maintenance", path: "/downtime", icon: <BuildCircleIcon /> },
-  { key: "analytics", label: "Analytics", path: "/analytics", icon: <AnalyticsIcon /> },
-  { key: "cameras", label: "Cameras", path: "/cameras", icon: <VideocamIcon /> },
-  { key: "reports", label: "Reports", path: "/reports", icon: <AssessmentRoundedIcon /> },
+  { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: <DashboardIcon fontSize="small" />, badge: "LIVE" },
+  { key: "devices", label: "Stations & Devices", path: "/devices", icon: <PrecisionManufacturingIcon fontSize="small" /> },
+  { key: "alarms", label: "Live Alarms", path: "/alarms", icon: <NotificationsActiveIcon fontSize="small" /> },
+  { key: "downtime", label: "Downtime & Maintenance", path: "/downtime", icon: <BuildCircleIcon fontSize="small" /> },
+  { key: "analytics", label: "Analytics", path: "/analytics", icon: <AnalyticsIcon fontSize="small" /> },
+  { key: "cameras", label: "Cameras", path: "/cameras", icon: <VideocamIcon fontSize="small" /> },
+  { key: "reports", label: "Reports", path: "/reports", icon: <AssessmentRoundedIcon fontSize="small" /> },
 ];
 
 function canAccess(role, pageKey) {
@@ -51,12 +53,6 @@ function LiveBadge() {
           position: "relative",
           cursor: "default",
           userSelect: "none",
-          transition: "transform 160ms ease, filter 160ms ease, box-shadow 160ms ease",
-          "&:hover": {
-            transform: "translateY(-1px)",
-            filter: "brightness(1.08)",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
-          },
           "&::after": {
             content: '""',
             position: "absolute",
@@ -91,15 +87,7 @@ function BrandLogo({ size = 44 }) {
         flexShrink: 0,
         border: "1px solid rgba(255,255,255,0.14)",
         boxShadow: "0 14px 40px rgba(0,0,0,0.40)",
-        cursor: "pointer",
         userSelect: "none",
-        transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
-        "&:hover": {
-          transform: "translateY(-1px) scale(1.03)",
-          boxShadow: "0 18px 55px rgba(0,0,0,0.50), 0 0 0 3px rgba(124,92,255,0.18)",
-          filter: "brightness(1.02)",
-        },
-        "&:active": { transform: "translateY(0px) scale(0.99)" },
       }}
       aria-label="brand"
     >
@@ -112,7 +100,6 @@ function BrandLogo({ size = 44 }) {
           height: "70%",
           objectFit: "contain",
           display: "block",
-          filter: "none",
         }}
       />
     </Box>
@@ -141,7 +128,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
         borderRight: "1px solid rgba(255,255,255,0.08)",
         backdropFilter: "blur(12px)",
         overflow: "hidden",
-        overflowX: "hidden",
         boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
         display: "flex",
         flexDirection: "column",
@@ -153,7 +139,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           height: UI_TOPBAR_HEIGHT,
           display: "flex",
           alignItems: "center",
-          px: 1.2,
+          px: 1.25,
           gap: 1,
           overflow: "hidden",
           minWidth: 0,
@@ -220,12 +206,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
           const active = location.pathname === item.path;
 
           return (
-            <Tooltip
-              key={item.path}
-              title={collapsed ? item.label : ""}
-              placement="right"
-              disableHoverListener={!collapsed}
-            >
+            <Tooltip key={item.path} title={collapsed ? item.label : ""} placement="right" disableHoverListener={!collapsed}>
               <Box
                 component={NavLink}
                 to={item.path}
@@ -233,9 +214,9 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                 sx={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 1.3,
-                  px: 1.2,
-                  py: 1.15,
+                  gap: 1.25,
+                  px: 1.1,
+                  py: 1.05,
                   borderRadius: 2.2,
                   textDecoration: "none",
                   mb: 0.8,
@@ -342,6 +323,7 @@ export default function Sidebar({ isDesktop, isCollapsed, mobileOpen, onCloseMob
             width: UI_SIDEBAR_EXPANDED,
             border: "none",
             background: "transparent",
+            overflow: "hidden",
           },
         }}
         sx={{

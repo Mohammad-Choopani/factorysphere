@@ -32,9 +32,20 @@ import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import PauseCircleFilledRoundedIcon from "@mui/icons-material/PauseCircleFilledRounded";
 import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
+import AlarmOnRoundedIcon from "@mui/icons-material/AlarmOnRounded";
+import TimerRoundedIcon from "@mui/icons-material/TimerRounded";
+import ViewModuleRoundedIcon from "@mui/icons-material/ViewModuleRounded";
 
 import { useNavigate } from "react-router-dom";
 import { PAGE_PERMISSIONS } from "../utils/permissions";
+
+/** ===== UI LOCKS ===== */
+const UI = {
+  rCard: 4,
+  rInner: 3,
+  padCard: { xs: 1.4, sm: 2 },
+  gap: { xs: 1.1, sm: 2 },
+};
 
 function getShiftInfo(now = new Date()) {
   const h = now.getHours();
@@ -51,28 +62,72 @@ function canAccess(role, pageKey) {
   return allowed.includes(role);
 }
 
+function EllipChip({ label, sx }) {
+  return (
+    <Chip
+      size="small"
+      label={label}
+      sx={{
+        height: 22,
+        fontWeight: 900,
+        maxWidth: 140,
+        borderRadius: 999,
+        "& .MuiChip-label": {
+          px: 1,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        },
+        ...sx,
+      }}
+    />
+  );
+}
+
+/**
+ * ✅ Fix for mobile “text/icon clipped by border”
+ * MUI Grid spacing uses negative margins. Inside Paper with overflow:hidden => clipping.
+ * This wrapper adds tiny horizontal inset ONLY on xs/sm to neutralize negative margins.
+ */
+function GridInset({ children, sx }) {
+  return (
+    <Box
+      sx={{
+        px: { xs: 0.9, sm: 0.35, md: 0 }, // tuned to cover spacing(1.2) negative margins on mobile
+        ...sx,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+/** Card shell */
 function CardShell({ children, sx, onClick, role = "region" }) {
   return (
     <Paper
       role={role}
       onClick={onClick}
       sx={{
-        p: { xs: 1.6, sm: 2.1 },
-        borderRadius: 4,
+        p: UI.padCard,
+        borderRadius: UI.rCard,
         height: "100%",
-        maxWidth: "100%",
         position: "relative",
-        overflow: "hidden", // ✅ prevents any chip/text bleeding outside
+
+        // ✅ FIX #1: avoid clipping on mobile
+        overflow: { xs: "visible", md: "hidden" },
+
+        boxSizing: "border-box",
         background: "rgba(0,0,0,0.18)",
         border: "1px solid rgba(255,255,255,0.08)",
-        transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease",
+        transition: "transform .16s ease, border-color .16s ease, background .16s ease",
         ...(onClick
           ? {
               cursor: "pointer",
               "&:hover": {
-                transform: { xs: "none", md: "translateY(-2px)" },
+                transform: { xs: "none", md: "translateY(-1px)" },
                 borderColor: "rgba(255,255,255,0.14)",
-                background: "rgba(255,255,255,0.03)",
+                background: "rgba(255,255,255,0.035)",
               },
               "&:active": { transform: "translateY(0px) scale(0.995)" },
             }
@@ -85,62 +140,81 @@ function CardShell({ children, sx, onClick, role = "region" }) {
   );
 }
 
-function KpiTile({ label, value, hint, tone = "primary" }) {
-  const ring =
-    tone === "primary"
-      ? "rgba(124,92,255,0.22)"
-      : tone === "cyan"
-      ? "rgba(45,226,230,0.20)"
-      : tone === "warn"
-      ? "rgba(255,200,87,0.18)"
-      : "rgba(255,77,109,0.16)";
-
+/** Section header */
+function SectionHeader({ icon, title, rightChip }) {
   return (
-    <CardShell
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
       sx={{
-        "@keyframes dashIn": {
-          from: { opacity: 0, transform: "translateY(8px)" },
-          to: { opacity: 1, transform: "translateY(0px)" },
-        },
-        animation: "dashIn 280ms ease both",
-        "&:before": {
-          content: '""',
-          position: "absolute",
-          inset: -2,
-          background: `radial-gradient(600px 260px at 20% 20%, ${ring}, transparent 55%)`,
-          pointerEvents: "none",
-        },
-      }}
+  gap: 1.2,
+  minWidth: 0,
+  pb: 0.75,
+
+  // extra safe inset from border on mobile
+  px: { xs: 0.7, sm: 0 },
+  pt: { xs: 0.2, sm: 0 },
+}}
+
     >
-      <Box sx={{ position: "relative" }}>
-        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 900, letterSpacing: 0.2 }}>
-          {label}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+        <Box
+          sx={{
+            width: 36,
+            height: 36,
+            borderRadius: UI.rInner,
+            display: "grid",
+            placeItems: "center",
+            background: "rgba(124,92,255,0.12)",
+            border: "1px solid rgba(124,92,255,0.22)",
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </Box>
+
+        <Typography
+          sx={{
+            fontWeight: 950,
+            minWidth: 0,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            lineHeight: 1.2,
+            pt: "1px",
+          }}
+        >
+          {title}
         </Typography>
-        <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4, mt: 0.5 }}>
-          {value}
-        </Typography>
-        {hint ? (
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            {hint}
-          </Typography>
-        ) : null}
-      </Box>
-    </CardShell>
+      </Stack>
+
+      {rightChip ? <EllipChip label={rightChip} sx={{ flexShrink: 0 }} /> : null}
+    </Stack>
   );
 }
 
+/** Small stat pill */
 function StatPill({ icon, label, value, sx }) {
   return (
     <Paper
       sx={{
-        p: 1.2,
-        borderRadius: 3,
+        p: 1.15,
+        borderRadius: UI.rInner,
         background: "rgba(255,255,255,0.03)",
         border: "1px solid rgba(255,255,255,0.08)",
         display: "flex",
         alignItems: "center",
         gap: 1.2,
         overflow: "hidden",
+        minHeight: 64,
+        height: "100%",
+        transition: "transform .14s ease, border-color .14s ease, background .14s ease",
+        "&:hover": {
+          transform: { xs: "none", md: "translateY(-1px)" },
+          borderColor: "rgba(255,255,255,0.14)",
+          background: "rgba(255,255,255,0.04)",
+        },
         ...sx,
       }}
     >
@@ -148,7 +222,7 @@ function StatPill({ icon, label, value, sx }) {
         sx={{
           width: 40,
           height: 40,
-          borderRadius: 3,
+          borderRadius: UI.rInner,
           display: "grid",
           placeItems: "center",
           background: "rgba(124,92,255,0.12)",
@@ -158,15 +232,30 @@ function StatPill({ icon, label, value, sx }) {
       >
         {icon}
       </Box>
+
       <Box sx={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ display: "block", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+          sx={{
+            display: "block",
+            fontWeight: 900,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {label}
         </Typography>
-        <Typography sx={{ fontWeight: 950, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <Typography
+          sx={{
+            fontWeight: 950,
+            lineHeight: 1.1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {value}
         </Typography>
       </Box>
@@ -181,18 +270,24 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
       role="button"
       sx={{
         p: 1.25,
-        borderRadius: 3,
+        borderRadius: UI.rInner,
         background: "rgba(255,255,255,0.03)",
         display: "flex",
         alignItems: "center",
         gap: 1.2,
+        minHeight: 74,
+        "&:hover": {
+          transform: { xs: "none", md: "translateY(-1px)" },
+          borderColor: "rgba(124,92,255,0.28)",
+          background: "rgba(124,92,255,0.05)",
+        },
       }}
     >
       <Box
         sx={{
           width: 44,
           height: 44,
-          borderRadius: 3,
+          borderRadius: UI.rInner,
           display: "grid",
           placeItems: "center",
           background: "rgba(124,92,255,0.14)",
@@ -211,19 +306,26 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              lineHeight: 1.1,
+              lineHeight: 1.15,
               minWidth: 0,
+              flex: 1,
             }}
           >
             {title}
           </Typography>
-          {badge ? <Chip size="small" label={badge} sx={{ height: 22, fontWeight: 900, flexShrink: 0 }} /> : null}
+
+          {badge ? <EllipChip label={badge} sx={{ maxWidth: 90, flexShrink: 0 }} /> : null}
         </Stack>
 
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+          sx={{
+            display: "block",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {subtitle}
         </Typography>
@@ -234,57 +336,41 @@ function ModuleRow({ icon, title, subtitle, badge, onClick }) {
   );
 }
 
-function SimpleList({ title, rows, rightBadge }) {
+function SimpleList({ title, rows, rightBadge, icon, minRows = 5 }) {
+  const padCount = Math.max(0, minRows - rows.length);
+
   return (
-    <CardShell>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}
-      >
-        <Typography
-          sx={{
-            fontWeight: 950,
-            minWidth: 0,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {title}
-        </Typography>
+    <CardShell
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 260,
+      }}
+    >
+      <SectionHeader icon={icon} title={title} rightChip={rightBadge} />
+      <Divider sx={{ mt: 1.35, mb: 1.35 }} />
 
-        {rightBadge ? (
-          <Chip
-            size="small"
-            label={rightBadge}
-            sx={{
-              flexShrink: 0,
-              maxWidth: "50%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          />
-        ) : null}
-      </Stack>
-
-      <Divider sx={{ my: 1.4 }} />
-
-      <Box sx={{ display: "grid", gap: 1 }}>
+      <Box sx={{ display: "grid", gap: 1, flex: 1, minHeight: 0 }}>
         {rows.map((r) => (
           <Paper
             key={r.id}
             sx={{
-              p: 1.1,
-              borderRadius: 3,
+              p: 1.05,
+              borderRadius: UI.rInner,
               background: "rgba(255,255,255,0.03)",
               border: "1px solid rgba(255,255,255,0.08)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               gap: 1.2,
-              overflow: "hidden", // ✅ stop badge from bleeding
+              overflow: "hidden",
+              minHeight: 56,
+              transition: "transform .14s ease, border-color .14s ease, background .14s ease",
+              "&:hover": {
+                transform: { xs: "none", md: "translateY(-1px)" },
+                borderColor: "rgba(255,255,255,0.14)",
+                background: "rgba(255,255,255,0.04)",
+              },
             }}
           >
             <Box sx={{ minWidth: 0, overflow: "hidden" }}>
@@ -302,23 +388,23 @@ function SimpleList({ title, rows, rightBadge }) {
               <Typography
                 variant="caption"
                 color="text.secondary"
-                sx={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                sx={{
+                  display: "block",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
               >
                 {r.sub}
               </Typography>
             </Box>
 
-            <Chip
-              size="small"
-              label={r.badge}
-              sx={{
-                height: 22,
-                fontWeight: 900,
-                flexShrink: 0,
-                borderColor: "rgba(255,255,255,0.12)",
-              }}
-            />
+            <EllipChip label={r.badge} sx={{ maxWidth: 96, flexShrink: 0 }} />
           </Paper>
+        ))}
+
+        {Array.from({ length: padCount }).map((_, idx) => (
+          <Box key={`pad-${idx}`} sx={{ height: 56, opacity: 0, pointerEvents: "none" }} />
         ))}
 
         {rows.length === 0 && (
@@ -335,6 +421,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMdDown = useMediaQuery(theme.breakpoints.down("md"));
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
 
   const role = localStorage.getItem("role") || "PlantManager";
   const email = localStorage.getItem("userEmail") || "user@factorysphere.dev";
@@ -344,50 +431,12 @@ export default function DashboardPage() {
 
   const modules = React.useMemo(() => {
     const list = [
-      {
-        key: "devices",
-        label: "Stations & Devices",
-        desc: "Digital Twin layout (Phase A shell)",
-        path: "/devices",
-        icon: <PrecisionManufacturingIcon />,
-        badge: "TWIN",
-      },
-      {
-        key: "alarms",
-        label: "Live Alarms",
-        desc: "Alert stream placeholder (Phase B real-time)",
-        path: "/alarms",
-        icon: <NotificationsActiveIcon />,
-        badge: "LIVE",
-      },
-      {
-        key: "downtime",
-        label: "Downtime & Maintenance",
-        desc: "Reasons + categories (UI only)",
-        path: "/downtime",
-        icon: <BuildCircleIcon />,
-      },
-      {
-        key: "analytics",
-        label: "Analytics",
-        desc: "KPI/OEE shell (Phase B)",
-        path: "/analytics",
-        icon: <AnalyticsIcon />,
-      },
-      {
-        key: "cameras",
-        label: "Cameras",
-        desc: "Feeds placeholder (Phase B)",
-        path: "/cameras",
-        icon: <VideocamIcon />,
-      },
-      {
-        key: "reports",
-        label: "Reports",
-        desc: "Exports shell (Phase B)",
-        path: "/reports",
-        icon: <AssessmentRoundedIcon />,
-      },
+      { key: "devices", label: "Stations & Devices", desc: "Digital Twin layout (Phase A shell)", path: "/devices", icon: <PrecisionManufacturingIcon />, badge: "TWIN" },
+      { key: "alarms", label: "Live Alarms", desc: "Alert stream placeholder (Phase B real-time)", path: "/alarms", icon: <NotificationsActiveIcon />, badge: "LIVE" },
+      { key: "downtime", label: "Downtime & Maintenance", desc: "Reasons + categories (UI only)", path: "/downtime", icon: <BuildCircleIcon /> },
+      { key: "analytics", label: "Analytics", desc: "KPI/OEE shell (Phase B)", path: "/analytics", icon: <AnalyticsIcon /> },
+      { key: "cameras", label: "Cameras", desc: "Feeds placeholder (Phase B)", path: "/cameras", icon: <VideocamIcon /> },
+      { key: "reports", label: "Reports", desc: "Exports shell (Phase B)", path: "/reports", icon: <AssessmentRoundedIcon /> },
     ];
 
     const allowed = list.filter((m) => canAccess(role, m.key));
@@ -403,7 +452,6 @@ export default function DashboardPage() {
     return { label: "Dashboard", path: "/dashboard" };
   }, [role]);
 
-  // Mock executive panels (Phase A)
   const topAlarms = React.useMemo(
     () => [
       { id: "a1", title: "DT-FRT-01 • Safety Gate", sub: "Zone 2 • 2 min ago", badge: "HIGH" },
@@ -429,8 +477,11 @@ export default function DashboardPage() {
   return (
     <Box
       sx={{
-        px: { xs: 1.2, sm: 2.2, md: 3 },
-        py: { xs: 1.4, sm: 2.2, md: 3 },
+        px: { xs: 1.1, sm: 2.2, md: 3 },
+        py: { xs: 1.2, sm: 2.2, md: 3 },
+        maxWidth: 1400,
+        mx: "auto",
+        overflowX: "clip",
         background: `
           radial-gradient(1100px 560px at 15% 8%, rgba(124,92,255,0.14), transparent 60%),
           radial-gradient(900px 520px at 92% 16%, rgba(45,226,230,0.10), transparent 55%),
@@ -439,7 +490,7 @@ export default function DashboardPage() {
       }}
     >
       {/* Header */}
-      <CardShell sx={{ p: { xs: 1.5, sm: 2.1 }, mb: { xs: 1.2, sm: 2 } }}>
+      <CardShell sx={{ mb: { xs: 1.1, sm: 2 } }}>
         <Stack
           direction={{ xs: "column", md: "row" }}
           spacing={{ xs: 1.1, md: 1.6 }}
@@ -448,22 +499,33 @@ export default function DashboardPage() {
           sx={{ minWidth: 0 }}
         >
           <Box sx={{ minWidth: 0 }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flexWrap: "wrap" }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{
+  minWidth: 0,
+  flexWrap: "wrap",
+  px: { xs: 2, sm: 0 },
+}}>
               <Typography variant={isMdDown ? "h6" : "h5"} sx={{ fontWeight: 950, letterSpacing: -0.3 }}>
                 Control Center
               </Typography>
-              <Chip size="small" label="Phase A" />
-              <Chip size="small" label="Mock" />
-              <Chip size="small" label="Plant 3" />
+
+              <EllipChip label="Phase A" />
+              <EllipChip label="Mock" />
+              <EllipChip label="Plant 3" />
             </Stack>
 
-            <Typography color="text.secondary" sx={{ mt: 0.45, lineHeight: 1.35 }}>
-              {shift.label} ({shift.range}) • <b>{role}</b>
-              <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>
-                {" "}
-                — {email}
-              </Box>
-            </Typography>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={{ xs: 0.3, sm: 1 }}
+              sx={{ mt: 0.7, color: "text.secondary" }}
+            >
+              <Typography sx={{ lineHeight: 1.25 }}>
+                {shift.label} ({shift.range}) • <b>{role}</b>
+              </Typography>
+
+              <Typography sx={{ display: { xs: "none", md: "block" }, lineHeight: 1.25 }}>
+                {email}
+              </Typography>
+            </Stack>
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
@@ -473,18 +535,20 @@ export default function DashboardPage() {
                 sx={{
                   width: 42,
                   height: 42,
-                  borderRadius: 2.5,
+                  borderRadius: UI.rInner,
                   border: "1px solid rgba(255,255,255,0.12)",
                   background: "rgba(255,255,255,0.04)",
+                  transition: "transform .14s ease, border-color .14s ease, background .14s ease",
+                  "&:hover": {
+                    transform: { xs: "none", md: "translateY(-1px)" },
+                    borderColor: "rgba(255,255,255,0.18)",
+                    background: "rgba(255,255,255,0.05)",
+                  },
                 }}
               >
                 <InfoOutlinedIcon />
               </IconButton>
             </Tooltip>
-
-            <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => navigate(primaryCta.path)}>
-              {primaryCta.label}
-            </Button>
           </Stack>
         </Stack>
 
@@ -505,221 +569,220 @@ export default function DashboardPage() {
               ),
             }}
           />
-          <Button variant="outlined" startIcon={<FilterAltRoundedIcon />} onClick={() => setQuery("")} sx={{ whiteSpace: "nowrap" }}>
+          <Button
+            variant="outlined"
+            startIcon={<FilterAltRoundedIcon />}
+            onClick={() => setQuery("")}
+            sx={{ whiteSpace: "nowrap" }}
+          >
             Clear
           </Button>
         </Stack>
 
         {/* Executive quick stats */}
-        <Grid container spacing={1.2} sx={{ mt: 1.4 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatPill icon={<TrendingUpRoundedIcon />} label="Running" value="82" />
+        <GridInset sx={{ mt: 1.4 }}>
+          <Grid container spacing={1.2} alignItems="stretch">
+            <Grid item xs={12} sm={6} md={3}>
+              <StatPill icon={<TrendingUpRoundedIcon />} label="Running" value="82" />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatPill
+                icon={<CancelRoundedIcon />}
+                label="Down"
+                value="8"
+                sx={{
+                  "& > div:first-of-type": {
+                    background: "rgba(255,77,109,0.10)",
+                    borderColor: "rgba(255,77,109,0.22)",
+                  },
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatPill
+                icon={<PauseCircleFilledRoundedIcon />}
+                label="Idle"
+                value="10"
+                sx={{
+                  "& > div:first-of-type": {
+                    background: "rgba(255,200,87,0.10)",
+                    borderColor: "rgba(255,200,87,0.22)",
+                  },
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatPill
+                icon={<WarningAmberRoundedIcon />}
+                label="Alarms"
+                value="12"
+                sx={{
+                  "& > div:first-of-type": {
+                    background: "rgba(45,226,230,0.08)",
+                    borderColor: "rgba(45,226,230,0.22)",
+                  },
+                }}
+              />
+            </Grid>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatPill
-              icon={<CancelRoundedIcon />}
-              label="Down"
-              value="8"
-              sx={{ "& > div:first-of-type": { background: "rgba(255,77,109,0.10)", borderColor: "rgba(255,77,109,0.22)" } }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatPill
-              icon={<PauseCircleFilledRoundedIcon />}
-              label="Idle"
-              value="10"
-              sx={{ "& > div:first-of-type": { background: "rgba(255,200,87,0.10)", borderColor: "rgba(255,200,87,0.22)" } }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatPill
-              icon={<WarningAmberRoundedIcon />}
-              label="Alarms"
-              value="12"
-              sx={{ "& > div:first-of-type": { background: "rgba(45,226,230,0.08)", borderColor: "rgba(45,226,230,0.22)" } }}
-            />
-          </Grid>
-        </Grid>
+        </GridInset>
       </CardShell>
 
-      {/* KPI strip */}
-      <Grid container spacing={{ xs: 1.1, sm: 2 }}>
-        <Grid item xs={12} sm={6} lg={3}>
-          <KpiTile label="Units Online" value="96 / 100" hint="Placeholder in Phase A." tone="cyan" />
-        </Grid>
-        <Grid item xs={12} sm={6} lg={3}>
-          <KpiTile label="Active Alarms" value="12" hint="Severity breakdown in Phase B." tone="warn" />
-        </Grid>
-        <Grid item xs={12} sm={6} lg={3}>
-          <KpiTile label="Shift Output" value="1,248" hint="Mock totals for Phase A." tone="primary" />
-        </Grid>
-        <Grid item xs={12} sm={6} lg={3}>
-          <KpiTile label="Downtime (min)" value="38" hint="Reason codes in Phase B." tone="danger" />
-        </Grid>
-      </Grid>
+      {/* Main layout */}
+      <Box
+        sx={{
+          mt: { xs: 1.1, sm: 2 },
+          display: "grid",
+          gap: UI.gap,
+          gridTemplateColumns: {
+            xs: "1fr",
+            md: "1fr 1fr",
+            lg: "5fr 7fr",
+          },
+          gridTemplateAreas: {
+            xs: `
+              "qa"
+              "alarms"
+              "down"
+              "mods"
+            `,
+            md: `
+              "qa alarms"
+              "down mods"
+            `,
+            lg: `
+              "qa alarms"
+              "down mods"
+            `,
+          },
+          alignItems: "stretch",
+        }}
+      >
+        {/* Quick Actions */}
+        <Box sx={{ gridArea: "qa", minWidth: 0 }}>
+          <CardShell
+            sx={{
+              minHeight: { xs: 240, md: 260 },
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <SectionHeader icon={<BoltRoundedIcon />} title="Quick Actions" rightChip="Safe" />
+            <Divider sx={{ mt: 1.35, mb: 1.35 }} />
 
-      {/* Main content */}
-      <Grid container spacing={{ xs: 1.1, sm: 2 }} sx={{ mt: { xs: 1.1, sm: 2 } }}>
-        {/* Left column */}
-        <Grid item xs={12} lg={5}>
-          <Grid container spacing={{ xs: 1.1, sm: 2 }}>
-            <Grid item xs={12}>
-              <CardShell>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, overflow: "hidden" }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 3,
-                        display: "grid",
-                        placeItems: "center",
-                        background: "rgba(45,226,230,0.10)",
-                        border: "1px solid rgba(45,226,230,0.22)",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <BoltRoundedIcon />
-                    </Box>
-                    <Box sx={{ minWidth: 0, overflow: "hidden" }}>
-                      <Typography sx={{ fontWeight: 950, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        Quick Actions
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                      >
-                        Phase A UI shell (no real actions)
-                      </Typography>
-                    </Box>
-                  </Stack>
-
-                  <Chip size="small" label="Safe" sx={{ flexShrink: 0 }} />
-                </Stack>
-
-                <Divider sx={{ my: 1.4 }} />
-
-                <Grid container spacing={1.2}>
-                  {/* ✅ keep primary CTA only once in this card */}
-                  <Grid item xs={12}>
-                    <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => navigate(primaryCta.path)}>
-                      {primaryCta.label}
-                    </Button>
-                  </Grid>
-
-                  <Grid item xs={12}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      onClick={() => {
-                        if (canAccess(role, "alarms")) return navigate("/alarms");
-                        if (canAccess(role, "downtime")) return navigate("/downtime");
-                        return navigate("/dashboard");
-                      }}
-                    >
-                      Open Secondary
-                    </Button>
-                  </Grid>
-
-                  <Grid item xs={12}>
-                    <Paper
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 3,
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                        Current Shift
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        {shift.label} ({shift.range}) • Visibility by role
-                      </Typography>
-                    </Paper>
-                  </Grid>
+            <GridInset>
+              <Grid container spacing={1.2} sx={{ flex: 1, alignContent: "flex-start" }}>
+                <Grid item xs={12}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    endIcon={<ArrowForwardRoundedIcon />}
+                    onClick={() => navigate(primaryCta.path)}
+                  >
+                    {primaryCta.label}
+                  </Button>
                 </Grid>
-              </CardShell>
-            </Grid>
 
-            <Grid item xs={12}>
-              <SimpleList title="Top Alarms" rightBadge="Mock" rows={topAlarms} />
-            </Grid>
-          </Grid>
-        </Grid>
-
-        {/* Right column */}
-        <Grid item xs={12} lg={7}>
-          <Grid container spacing={{ xs: 1.1, sm: 2 }}>
-            <Grid item xs={12}>
-              <SimpleList title="Downtime Drivers" rightBadge="Mock" rows={topDowntime} />
-            </Grid>
-
-            <Grid item xs={12}>
-              <CardShell>
-                <Stack
-                  direction="row"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  sx={{ gap: 1, minWidth: 0, overflow: "hidden" }}
-                >
-                  <Typography
-                    sx={{
-                      fontWeight: 950,
-                      minWidth: 0,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                <Grid item xs={12}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => {
+                      if (canAccess(role, "alarms")) return navigate("/alarms");
+                      if (canAccess(role, "downtime")) return navigate("/downtime");
+                      return navigate("/dashboard");
                     }}
                   >
-                    Modules
-                  </Typography>
+                    Open Secondary
+                  </Button>
+                </Grid>
 
-                  <Chip
-                    size="small"
-                    label="Permission-based"
+                <Grid item xs={12}>
+                  <Paper
                     sx={{
-                      flexShrink: 0,
-                      maxWidth: "60%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      p: 1.4,
+                      borderRadius: UI.rInner,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      transition: "transform .14s ease, border-color .14s ease, background .14s ease",
+                      "&:hover": {
+                        transform: { xs: "none", md: "translateY(-1px)" },
+                        borderColor: "rgba(255,255,255,0.14)",
+                        background: "rgba(255,255,255,0.04)",
+                      },
                     }}
-                  />
-                </Stack>
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                      Current Shift
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {shift.label} ({shift.range}) • Visibility by role
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            </GridInset>
+          </CardShell>
+        </Box>
 
-                <Divider sx={{ my: 1.4 }} />
+        {/* Top Alarms */}
+        <Box sx={{ gridArea: "alarms", minWidth: 0 }}>
+          <SimpleList title="Top Alarms" rightBadge="Mock" rows={topAlarms} icon={<AlarmOnRoundedIcon />} minRows={5} />
+        </Box>
 
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 1,
-                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-                  }}
-                >
-                  {modules.map((m) => (
-                    <ModuleRow
-                      key={m.key}
-                      icon={m.icon}
-                      title={m.label}
-                      subtitle={m.desc}
-                      badge={m.badge}
-                      onClick={() => navigate(m.path)}
-                    />
-                  ))}
-                </Box>
+        {/* Downtime Drivers */}
+        <Box sx={{ gridArea: "down", minWidth: 0 }}>
+          <SimpleList
+            title="Downtime Drivers"
+            rightBadge="Mock"
+            rows={topDowntime}
+            icon={<TimerRoundedIcon />}
+            minRows={5}
+          />
+        </Box>
 
-                {modules.length === 0 && (
-                  <Typography variant="body2" color="text.secondary" sx={{ pt: 1 }}>
-                    No modules assigned for this role.
-                  </Typography>
-                )}
-              </CardShell>
-            </Grid>
-          </Grid>
-        </Grid>
-      </Grid>
+        {/* Modules */}
+        <Box sx={{ gridArea: "mods", minWidth: 0 }}>
+          <CardShell
+            sx={{
+              minHeight: { xs: 280, md: 320 },
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <SectionHeader icon={<ViewModuleRoundedIcon />} title="Modules" rightChip="Permission-based" />
+            <Divider sx={{ mt: 1.35, mb: 1.35 }} />
+
+            <Box
+              sx={{
+                display: "grid",
+                gap: 1,
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                alignContent: "start",
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
+              {modules.map((m) => (
+                <ModuleRow
+                  key={m.key}
+                  icon={m.icon}
+                  title={m.label}
+                  subtitle={m.desc}
+                  badge={m.badge}
+                  onClick={() => navigate(m.path)}
+                />
+              ))}
+            </Box>
+
+            {modules.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ pt: 1 }}>
+                No modules assigned for this role.
+              </Typography>
+            )}
+          </CardShell>
+        </Box>
+      </Box>
 
       {/* Footer hint */}
       <Box
@@ -735,7 +798,7 @@ export default function DashboardPage() {
         }}
       >
         <div>Mode: UI Prototype + Mock Data • No real-time required yet</div>
-        <div>Next: Responsive Layout polish + Sidebar mobile drawer</div>
+        <div>{isSmDown ? "Next: Sidebar drawer + mobile polish" : "Next: Responsive Layout polish + Sidebar mobile drawer"}</div>
       </Box>
     </Box>
   );

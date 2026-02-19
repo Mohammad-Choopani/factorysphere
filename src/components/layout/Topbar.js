@@ -65,7 +65,6 @@ function BrandLogo({ size = 44 }) {
           height: "70%",
           objectFit: "contain",
           display: "block",
-          filter: "none",
         }}
       />
     </Box>
@@ -99,7 +98,15 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
         borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      <Toolbar sx={{ display: "flex", justifyContent: "space-between", gap: 1.2, minHeight: 72 }}>
+      <Toolbar
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 1.2,
+          minHeight: { xs: 64, md: 72 },
+          px: { xs: 1, sm: 1.5, md: 2 },
+        }}
+      >
         {/* Left */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, minWidth: 0 }}>
           <Tooltip
@@ -117,8 +124,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
               onClick={onHamburger}
               aria-label={isDesktop ? "toggle sidebar" : "toggle menu"}
               sx={{
-                width: 48,
-                height: 48,
+                width: 46,
+                height: 46,
                 borderRadius: 2.5,
                 border: "1px solid rgba(255,255,255,0.12)",
                 background: "rgba(255,255,255,0.04)",
@@ -149,11 +156,15 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
             >
               FactorySphere
             </Typography>
+
             <Typography
               variant="caption"
               sx={{
                 display: { xs: "none", sm: "block" },
                 color: "rgba(255,255,255,0.62)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               Plant 3 • {shift.label}
@@ -162,15 +173,37 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
         </Box>
 
         {/* Right */}
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-          {!isXs && <Chip size="small" label={role} sx={{ fontWeight: 900 }} />}
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{
+            alignItems: "center",
+            flexWrap: "nowrap",
+            minWidth: 0,
+          }}
+        >
+          {!isXs && (
+            <Chip
+              size="small"
+              label={role}
+              sx={{
+                fontWeight: 900,
+                maxWidth: 220,
+              }}
+            />
+          )}
+
           <Chip size="small" label={shift.key} sx={{ fontWeight: 900 }} />
 
           <Typography
             variant="body2"
             sx={{
-              display: { xs: "none", md: "block" },
+              display: { xs: "none", lg: "block" },
               color: "rgba(255,255,255,0.72)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: 260,
             }}
           >
             {email}
@@ -182,8 +215,8 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                 onClick={handleLogout}
                 aria-label="logout"
                 sx={{
-                  width: 48,
-                  height: 48,
+                  width: 46,
+                  height: 46,
                   borderRadius: 2.5,
                   border: "1px solid rgba(255,255,255,0.12)",
                   background: "rgba(255,255,255,0.04)",
@@ -202,6 +235,7 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
                 borderColor: "rgba(255,255,255,0.16)",
                 color: "rgba(255,255,255,0.86)",
                 "&:hover": { borderColor: "rgba(255,255,255,0.30)" },
+                whiteSpace: "nowrap",
               }}
             >
               Logout

@@ -3,14 +3,9 @@ import { createTheme } from "@mui/material/styles";
 
 const theme = createTheme({
   breakpoints: {
-    values: {
-      xs: 0,
-      sm: 600,
-      md: 900,
-      lg: 1200,
-      xl: 1536,
-    },
+    values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1536 },
   },
+
   palette: {
     mode: "dark",
     background: {
@@ -28,34 +23,40 @@ const theme = createTheme({
     },
     divider: "rgba(255,255,255,0.08)",
   },
-  shape: { borderRadius: 18 },
+
+  // ✅ Important: keep global radius reasonable, components can override
+  shape: { borderRadius: 16 },
+
   typography: {
     fontFamily:
       '"Inter", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-    h4: { fontWeight: 800, letterSpacing: -0.3, fontSize: "1.6rem" },
-    h5: { fontWeight: 800, letterSpacing: -0.25, fontSize: "1.25rem" },
-    h6: { fontWeight: 700, letterSpacing: -0.2, fontSize: "1.05rem" },
-    subtitle1: { fontWeight: 700, opacity: 0.95 },
-    body1: { fontWeight: 500 },
-    body2: { fontWeight: 500 },
-    caption: { fontWeight: 600, opacity: 0.82 },
-    button: { textTransform: "none", fontWeight: 700 },
+    h4: { fontWeight: 800, letterSpacing: -0.3, fontSize: "1.6rem", lineHeight: 1.15 },
+    h5: { fontWeight: 800, letterSpacing: -0.25, fontSize: "1.25rem", lineHeight: 1.2 },
+    h6: { fontWeight: 700, letterSpacing: -0.2, fontSize: "1.05rem", lineHeight: 1.25 },
+    subtitle1: { fontWeight: 700, opacity: 0.95, lineHeight: 1.35 },
+    body1: { fontWeight: 500, lineHeight: 1.45 },
+    body2: { fontWeight: 500, lineHeight: 1.45 },
+    caption: { fontWeight: 600, opacity: 0.82, lineHeight: 1.35 },
+    button: { textTransform: "none", fontWeight: 700, lineHeight: 1.1 },
   },
+
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        html: { height: "100%" },
         body: {
+          minHeight: "100%",
           backgroundImage:
             "radial-gradient(1200px 600px at 20% 0%, rgba(124, 92, 255, 0.12), transparent 60%), radial-gradient(900px 500px at 90% 20%, rgba(45, 226, 230, 0.10), transparent 55%)",
           backgroundAttachment: "fixed",
         },
+        // ✅ This fixes many overflow + chip + ellipsis issues
+        "*, *::before, *::after": { boxSizing: "border-box" },
       },
     },
 
     MuiContainer: {
-      defaultProps: {
-        maxWidth: "xl",
-      },
+      defaultProps: { maxWidth: "xl" },
       styleOverrides: {
         root: {
           paddingLeft: 16,
@@ -70,8 +71,7 @@ const theme = createTheme({
           border: "1px solid rgba(255,255,255,0.08)",
           backdropFilter: "blur(14px)",
           WebkitBackdropFilter: "blur(14px)",
-          boxShadow:
-            "0 22px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02) inset",
+          boxShadow: "0 18px 60px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.02) inset",
         },
       },
     },
@@ -110,9 +110,7 @@ const theme = createTheme({
           borderRadius: 14,
           background: "rgba(10, 12, 22, 0.55)",
           transition: "transform .18s ease, box-shadow .18s ease",
-          "&:hover": {
-            boxShadow: "0 10px 35px rgba(0,0,0,0.35)",
-          },
+          "&:hover": { boxShadow: "0 10px 35px rgba(0,0,0,0.35)" },
           "&.Mui-focused": {
             boxShadow: "0 16px 55px rgba(124, 92, 255, 0.16)",
             transform: "translateY(-1px)",
@@ -122,12 +120,36 @@ const theme = createTheme({
       },
     },
 
+    // ✅ FIX: chips never touch borders / dividers and never overflow weirdly
     MuiChip: {
       styleOverrides: {
         root: {
           borderRadius: 999,
-          fontWeight: 700,
+          fontWeight: 800,
           border: "1px solid rgba(255,255,255,0.10)",
+          height: 24,
+          maxWidth: "100%",
+          display: "inline-flex",
+          alignItems: "center",
+        },
+        label: {
+          paddingLeft: 10,
+          paddingRight: 10,
+          paddingTop: 0,
+          paddingBottom: 0,
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        },
+      },
+    },
+
+    // ✅ optional: makes divider spacing consistent under headers
+    MuiDivider: {
+      styleOverrides: {
+        root: {
+          borderColor: "rgba(255,255,255,0.08)",
         },
       },
     },

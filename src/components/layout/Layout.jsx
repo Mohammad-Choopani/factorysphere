@@ -1,3 +1,4 @@
+// src/components/layout/Layout.jsx
 import React from "react";
 import { Box, useMediaQuery } from "@mui/material";
 import { Outlet } from "react-router-dom";
@@ -28,11 +29,7 @@ export default function Layout() {
 
   const closeMobile = () => setMobileOpen(false);
 
-  const sidebarWidth = isDesktop
-    ? isCollapsed
-      ? UI_SIDEBAR_COLLAPSED
-      : UI_SIDEBAR_EXPANDED
-    : 0;
+  const sidebarWidth = isDesktop ? (isCollapsed ? UI_SIDEBAR_COLLAPSED : UI_SIDEBAR_EXPANDED) : 0;
 
   return (
     <Box
@@ -41,33 +38,37 @@ export default function Layout() {
         minHeight: "100dvh",
         width: "100%",
         overflow: "hidden",
+        position: "relative",
       }}
     >
-      <Sidebar
-        isDesktop={isDesktop}
-        isCollapsed={isCollapsed}
-        mobileOpen={mobileOpen}
-        onCloseMobile={closeMobile}
-      />
+      <Sidebar isDesktop={isDesktop} isCollapsed={isCollapsed} mobileOpen={mobileOpen} onCloseMobile={closeMobile} />
 
+      {/* App shell */}
       <Box
         sx={{
           flex: 1,
           minWidth: 0,
           display: "flex",
           flexDirection: "column",
-          ml: { xs: 0, md: `${sidebarWidth}px` },
-          transition: { md: "margin-left 220ms ease" },
           width: "100%",
           overflow: "hidden",
+
+          // Keep sizing stable when sidebar toggles
+          pl: { xs: 0, md: `${sidebarWidth}px` },
+          transition: { md: "padding-left 220ms ease" },
         }}
       >
-        <Topbar
-          isDesktop={isDesktop}
-          isCollapsed={isCollapsed}
-          mobileOpen={mobileOpen}
-          onHamburger={handleHamburger}
-        />
+        {/* Topbar */}
+        <Box
+          sx={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            flexShrink: 0,
+          }}
+        >
+          <Topbar isDesktop={isDesktop} isCollapsed={isCollapsed} mobileOpen={mobileOpen} onHamburger={handleHamburger} />
+        </Box>
 
         {/* Scroll container */}
         <Box
@@ -77,10 +78,28 @@ export default function Layout() {
             overflowY: "auto",
             overflowX: "hidden",
             WebkitOverflowScrolling: "touch",
-            pb: "var(--safe-bottom)",
+
+            // ✅ Do NOT center content in an app shell
+            // ✅ Let pages use full available width
+            display: "block",
           }}
         >
-          <Outlet />
+          <Box
+            sx={{
+              width: "100%",
+              maxWidth: "none",
+              mx: 0,
+
+              // unified app padding (page-level can still add its own)
+              px: { xs: 1, sm: 2, md: 2.5 },
+              py: { xs: 1, sm: 1.5, md: 2 },
+              pb: "var(--safe-bottom)",
+              boxSizing: "border-box",
+              minWidth: 0,
+            }}
+          >
+            <Outlet />
+          </Box>
         </Box>
       </Box>
     </Box>
