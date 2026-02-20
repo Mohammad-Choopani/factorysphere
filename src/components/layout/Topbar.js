@@ -19,6 +19,7 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 import { useLocation, useNavigate } from "react-router-dom";
 import logo from "../../assets/logo.png";
+import useAuth from "../../auth/useAuth";
 
 function getShiftInfo(now = new Date()) {
   const h = now.getHours();
@@ -76,13 +77,15 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
   const location = useLocation();
   const isXs = useMediaQuery("(max-width: 520px)");
 
+  const { logout } = useAuth();
+
   const role = localStorage.getItem("role") || "UnknownRole";
   const email = localStorage.getItem("userEmail") || "unknown@local";
   const shift = getShiftInfo();
 
   const handleLogout = () => {
-    localStorage.removeItem("role");
-    localStorage.removeItem("userEmail");
+    // ✅ Hard-lock auth lifecycle: remove LS + emit AUTH_EVENT (same-tab sync)
+    logout();
     navigate("/", { replace: true, state: { from: location.pathname } });
   };
 
