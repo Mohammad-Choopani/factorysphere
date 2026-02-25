@@ -91,3 +91,24 @@ a{ color:inherit; text-decoration:none; }
   padding-bottom: var(--safe-bottom);
   padding-left: var(--safe-left);
 }
+.cad-grid-layer {
+  position: absolute;
+  inset: 0;
+  background:
+    /* Major grid */
+    linear-gradient(#2b2f36 2px, transparent 2px),
+    linear-gradient(90deg, #2b2f36 2px, transparent 2px),
+
+    /* Minor grid */
+    linear-gradient(#1e2228 1px, transparent 1px),
+    linear-gradient(90deg, #1e2228 1px, transparent 1px);
+
+  background-size:
+    200px 200px,
+    200px 200px,
+    40px 40px,
+    40px 40px;
+
+  opacity: 0.55;
+  pointer-events: none;
+}
