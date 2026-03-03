@@ -1,6 +1,6 @@
 // src/components/layout/Sidebar.js
 import React from "react";
-import { Box, Divider, Tooltip, Typography, Chip, Drawer, Stack } from "@mui/material";
+import { Box, Divider, Tooltip, Typography, Chip, Drawer, Stack, Badge } from "@mui/material";
 import { NavLink, useLocation } from "react-router-dom";
 
 import DashboardIcon from "@mui/icons-material/Dashboard";
@@ -13,6 +13,7 @@ import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
 
 import logo from "../../assets/logo.png";
 import { PAGE_PERMISSIONS } from "../../utils/permissions";
+import { useAlarmCenter } from "../../state/alarmCenter.store";
 
 // UI constants (must match Layout.jsx)
 const UI_SIDEBAR_COLLAPSED = 76;
@@ -110,6 +111,8 @@ function SidebarContent({ collapsed, onNavigateClose }) {
   const location = useLocation();
   const role = localStorage.getItem("role") || "—";
 
+  const { unread, markAllRead } = useAlarmCenter();
+
   const width = collapsed ? UI_SIDEBAR_COLLAPSED : UI_SIDEBAR_EXPANDED;
 
   const navItems = React.useMemo(() => {
@@ -205,12 +208,38 @@ function SidebarContent({ collapsed, onNavigateClose }) {
         {navItems.map((item) => {
           const active = location.pathname === item.path;
 
+          const iconNode =
+            item.key === "alarms" ? (
+              <Badge
+                badgeContent={unread}
+                color="error"
+                overlap="circular"
+                sx={{
+                  "& .MuiBadge-badge": {
+                    fontWeight: 900,
+                    minWidth: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    border: "1px solid rgba(0,0,0,0.35)",
+                    boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                  },
+                }}
+              >
+                {item.icon}
+              </Badge>
+            ) : (
+              item.icon
+            );
+
           return (
             <Tooltip key={item.path} title={collapsed ? item.label : ""} placement="right" disableHoverListener={!collapsed}>
               <Box
                 component={NavLink}
                 to={item.path}
-                onClick={() => onNavigateClose?.()}
+                onClick={() => {
+                  if (item.key === "alarms") markAllRead();
+                  onNavigateClose?.();
+                }}
                 sx={{
                   display: "flex",
                   alignItems: "center",
@@ -234,7 +263,7 @@ function SidebarContent({ collapsed, onNavigateClose }) {
                   },
                 }}
               >
-                {item.icon}
+                {iconNode}
 
                 {!collapsed && (
                   <Box
