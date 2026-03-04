@@ -92,22 +92,6 @@ function startOfDayLocal(d) {
 function endOfDayLocal(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 }
-function startOfWeekLocal(d) {
-  const x = new Date(d);
-  const day = x.getDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  x.setDate(x.getDate() + diff);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfWeekLocal(d) {
-  const s = startOfWeekLocal(d);
-  const e = new Date(s);
-  e.setDate(e.getDate() + 6);
-  e.setHours(23, 59, 59, 999);
-  return e;
-}
-
 function clipIntervalMs(aStart, aEnd, bStart, bEnd) {
   const s = Math.max(aStart.getTime(), bStart.getTime());
   const e = Math.min(aEnd.getTime(), bEnd.getTime());
