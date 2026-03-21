@@ -1,4 +1,3 @@
-// src/components/layout/Sidebar.js
 import React from "react";
 import { Box, Divider, Tooltip, Typography, Chip, Drawer, Stack, Badge } from "@mui/material";
 import { NavLink, useLocation } from "react-router-dom";
@@ -10,6 +9,8 @@ import BuildCircleIcon from "@mui/icons-material/BuildCircle";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
+import FactoryRoundedIcon from "@mui/icons-material/FactoryRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 
 import logo from "../../assets/logo.png";
 import { PAGE_PERMISSIONS } from "../../utils/permissions";
@@ -19,14 +20,16 @@ import { useAlarmCenter } from "../../state/alarmCenter.store";
 const UI_SIDEBAR_COLLAPSED = 76;
 const UI_SIDEBAR_EXPANDED = 268;
 
-// ✅ Must match Topbar minHeight on desktop/mobile range
+// Must match Topbar minHeight on desktop/mobile range
 const UI_TOPBAR_HEIGHT = 72;
 
 const ALL_NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: <DashboardIcon fontSize="small" />, badge: "LIVE" },
   { key: "devices", label: "Stations & Devices", path: "/devices", icon: <PrecisionManufacturingIcon fontSize="small" /> },
+  { key: "production", label: "Production", path: "/production", icon: <FactoryRoundedIcon fontSize="small" /> },
   { key: "alarms", label: "Live Alarms", path: "/alarms", icon: <NotificationsActiveIcon fontSize="small" /> },
   { key: "downtime", label: "Downtime & Maintenance", path: "/downtime", icon: <BuildCircleIcon fontSize="small" /> },
+  { key: "components", label: "Component Requests", path: "/components", icon: <Inventory2RoundedIcon fontSize="small" /> },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: <AnalyticsIcon fontSize="small" /> },
   { key: "cameras", label: "Cameras", path: "/cameras", icon: <VideocamIcon fontSize="small" /> },
   { key: "reports", label: "Reports", path: "/reports", icon: <AssessmentRoundedIcon fontSize="small" /> },
@@ -136,7 +139,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
         flexDirection: "column",
       }}
     >
-      {/* Header */}
       <Box
         sx={{
           height: UI_TOPBAR_HEIGHT,
@@ -203,7 +205,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
 
       <Divider sx={{ borderColor: "rgba(255,255,255,0.08)" }} />
 
-      {/* Navigation */}
       <Box sx={{ py: 1, px: 1, overflowX: "hidden" }}>
         {navItems.map((item) => {
           const active = location.pathname === item.path;
@@ -311,7 +312,6 @@ function SidebarContent({ collapsed, onNavigateClose }) {
 
       <Box sx={{ flex: 1 }} />
 
-      {/* Footer */}
       <Box
         sx={{
           px: 1.4,

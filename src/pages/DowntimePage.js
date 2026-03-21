@@ -3,49 +3,49 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Box,
   Typography,
+  Dialog,
+  Button,
+  MenuItem,
+  Select,
+  Divider,
   Stack,
   Paper,
-  Divider,
   Chip,
-  IconButton,
-  Tooltip,
   TextField,
   InputAdornment,
+  FormControl,
+  IconButton,
+  Tooltip,
+  Drawer,
   useMediaQuery,
-  Button,
 } from "@mui/material";
 
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
-import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
-import DoneAllRoundedIcon from "@mui/icons-material/DoneAllRounded";
+import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import PauseCircleRoundedIcon from "@mui/icons-material/PauseCircleRounded";
+import PlayCircleRoundedIcon from "@mui/icons-material/PlayCircleRounded";
+import CategoryRoundedIcon from "@mui/icons-material/CategoryRounded";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid, Billboard, Text } from "@react-three/drei";
 
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip as RTooltip,
-  LabelList,
-  LineChart,
-  Line,
-  Area,
-  CartesianGrid,
-  ComposedChart,
-} from "recharts";
-
 import { getPlant3Units } from "../data/mock/plant3.units.mock";
 import { useAlarmCenter, EVENT_TYPE } from "../state/alarmCenter.store";
+import { postDowntimeStart, postDowntimeEnd } from "../services/alarms.api";
 
 const LAYOUT_SPREAD = 1.34;
 
-// Persisted downtime memory (independent from live alarm history)
-const DT_PERSIST_KEY = "FS_DOWNTIME_MEMORY_V1";
+const SHIFT_ORDER = ["A", "B", "C"];
+const SHIFT_TOTAL_MIN = 480;
+const PLANNED_BREAK_MIN = 40;
+const NET_WORK_MIN = SHIFT_TOTAL_MIN - PLANNED_BREAK_MIN;
+const DAILY_SHIFT_COUNT = 3;
+const DAILY_TOTAL_MIN = SHIFT_TOTAL_MIN * DAILY_SHIFT_COUNT;
+const DAILY_NET_WORK_MIN = NET_WORK_MIN * DAILY_SHIFT_COUNT;
+const DEFAULT_TOLERANCE_MIN = 5;
+const LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 const PAGE = {
   bg: "#0b0f14",
@@ -56,1170 +56,1640 @@ const PAGE = {
   text: "rgba(255,255,255,0.92)",
   subtext: "rgba(255,255,255,0.65)",
   muted: "rgba(255,255,255,0.52)",
+  accent: "rgba(56,189,248,0.95)",
+  success: "#22c55e",
+  warn: "#f59e0b",
+  danger: "#ef4444",
+  purple: "#a855f7",
+  info: "#38bdf8",
 };
 
-const COLOR_GREEN = "#22c55e";
-const COLOR_RED = "#ef4444";
-const COLOR_YELLOW = "#f59e0b";
+const COLORS = [
+  "#38bdf8",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#a855f7",
+  "#14b8a6",
+  "#f97316",
+  "#64748b",
+  "#06b6d4",
+  "#84cc16",
+  "#f43f5e",
+  "#facc15",
+];
 
-/* ------------------- utils ------------------- */
+const SEVERITY = {
+  LOW: "LOW",
+  MED: "MED",
+  HIGH: "HIGH",
+};
+
+const SOURCE_TYPE = {
+  SYSTEM: "SYSTEM",
+  OPERATOR: "OPERATOR",
+  TEAM_LEAD: "TEAM_LEAD",
+};
+
+const SCOPE_TYPE = {
+  UNIT: "UNIT",
+  STATION: "STATION",
+};
+
+const SHIFT_META = {
+  A: {
+    key: "A",
+    label: "Shift 1 — Midnight",
+    shortLabel: "A",
+    startMin: 22 * 60,
+    endMin: 6 * 60,
+  },
+  B: {
+    key: "B",
+    label: "Shift 2 — Morning",
+    shortLabel: "B",
+    startMin: 6 * 60,
+    endMin: 14 * 60,
+  },
+  C: {
+    key: "C",
+    label: "Shift 3 — Afternoon",
+    shortLabel: "C",
+    startMin: 14 * 60,
+    endMin: 22 * 60,
+  },
+};
+
+const DOWNTIME_CATALOG = [
+  {
+    group: "Maintenance",
+    code: "MAINTENANCE",
+    severity: SEVERITY.HIGH,
+    reasons: [
+      { label: "Cold / Hold / Good Part Validation", code: "COLD_HOLD_GPV" },
+      { label: "Robot Issue", code: "ROBOT_ISSUE" },
+      { label: "Sensor Issue", code: "SENSOR_ISSUE" },
+      { label: "Vision System Issue", code: "VISION_ISSUE" },
+      { label: "Force Gun Issue", code: "FORCE_GUN_ISSUE" },
+      { label: "Welder Issue", code: "WELDER_ISSUE" },
+    ],
+  },
+  {
+    group: "Break",
+    code: "BREAK",
+    severity: SEVERITY.LOW,
+    reasons: [
+      { label: "Break / Lunch", code: "BREAK_LUNCH" },
+      { label: "Meeting", code: "MEETING" },
+      { label: "Safety Issue", code: "SAFETY_ISSUE" },
+    ],
+  },
+  {
+    group: "Process",
+    code: "PROCESS",
+    severity: SEVERITY.MED,
+    reasons: [
+      { label: "Running Slow - Sub Pack", code: "RUNNING_SLOW_SUB_PACK" },
+      { label: "Waiting Components", code: "WAITING_COMPONENTS" },
+      { label: "Waiting PKG Unit", code: "WAITING_PKG_UNIT" },
+      { label: "Waiting Parts WIP", code: "WAITING_PARTS_WIP" },
+      { label: "Waiting For Quality", code: "WAITING_FOR_QUALITY" },
+      { label: "Part Changeover", code: "PART_CHANGEOVER" },
+      { label: "JOMAR - Parts Not In Schedule", code: "JOMAR_PARTS_NOT_IN_SCHEDULE" },
+      { label: "Part Quality Issue", code: "PART_QUALITY_ISSUE" },
+      { label: "Label Sys Problems", code: "LABEL_SYS_PROBLEMS" },
+      { label: "Color - Fail Bad Part", code: "COLOR_FAIL_BAD_PART" },
+    ],
+  },
+];
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function baseLineColor(status) {
-  return status === "RUNNING" ? COLOR_GREEN : COLOR_RED;
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function toLocalDT(tsISO) {
+function formatNumber(n) {
+  const value = Number(n || 0);
+  return Number.isFinite(value) ? value.toLocaleString() : "0";
+}
+
+function formatMinutes(n) {
+  return `${formatNumber(Math.round(Number(n || 0)))} min`;
+}
+
+function formatPercent(n) {
+  const value = Number(n || 0);
+  return `${value.toFixed(value >= 10 ? 0 : 1)}%`;
+}
+
+function formatTs(tsISO) {
+  if (!tsISO) return "—";
   try {
-    const d = new Date(tsISO);
-    if (Number.isNaN(d.getTime())) return null;
-    return d;
+    return new Date(tsISO).toLocaleString();
   } catch {
-    return null;
+    return "—";
   }
 }
 
-function normalizeText(x) {
-  return String(x || "").trim();
+function formatDurationMs(ms) {
+  const safe = Math.max(0, Number(ms) || 0);
+  const totalSec = Math.floor(safe / 1000);
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  const ss = totalSec % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function startOfDayLocal(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
-function endOfDayLocal(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-function clipIntervalMs(aStart, aEnd, bStart, bEnd) {
-  const s = Math.max(aStart.getTime(), bStart.getTime());
-  const e = Math.min(aEnd.getTime(), bEnd.getTime());
-  return Math.max(0, e - s);
+function compactLabel(text, max = 14) {
+  const value = String(text || "—");
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
 }
 
-function msToMinutes(ms) {
-  return Math.max(0, Math.round(Number(ms || 0) / 60000));
+function severityChipColor(sev) {
+  if (sev === SEVERITY.HIGH) return "error";
+  if (sev === SEVERITY.MED) return "warning";
+  return "default";
 }
 
-function formatMinutes(m) {
-  const mm = Math.max(0, Math.round(Number(m || 0)));
-  if (mm < 60) return `${mm}m`;
-  const h = Math.floor(mm / 60);
-  const r = mm % 60;
-  return `${h}h ${r}m`;
+function pickToneByCount(n) {
+  if (n <= 2) return "success";
+  if (n <= 5) return "accent";
+  if (n <= 9) return "warn";
+  return "danger";
 }
 
-function safeISO(ms) {
-  try {
-    return new Date(ms).toISOString();
-  } catch {
-    return new Date().toISOString();
-  }
+function pickToneByMinutes(n) {
+  if (n <= 10) return "success";
+  if (n <= 25) return "accent";
+  if (n <= 45) return "warn";
+  return "danger";
 }
 
-function softHash(seedStr) {
-  const s = String(seedStr || "");
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h >>> 0;
-}
-function paletteIdx(seedStr) {
-  return softHash(seedStr) % 10;
+function toDateSafe(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
-function makeLocal(d, hh, mm, ss = 0, ms = 0) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm, ss, ms);
+function getMinutesOfDay(date) {
+  return date.getHours() * 60 + date.getMinutes();
 }
 
-function getShiftWindowsForDay(dayLocal) {
-  const day0 = startOfDayLocal(dayLocal);
-
-  const A = { key: "A", label: "Shift A", start: makeLocal(day0, 6, 0), end: makeLocal(day0, 14, 0) };
-  const B = { key: "B", label: "Shift B", start: makeLocal(day0, 14, 0), end: makeLocal(day0, 22, 0) };
-
-  const C_start = makeLocal(day0, 22, 0);
-  const nextDay0 = new Date(day0);
-  nextDay0.setDate(nextDay0.getDate() + 1);
-  const C_end = makeLocal(nextDay0, 6, 0);
-
-  const C = { key: "C", label: "Shift C", start: C_start, end: C_end };
-
-  return [A, B, C];
+function getCurrentPlantShiftKey(date = new Date()) {
+  const totalMinutes = getMinutesOfDay(date);
+  if (totalMinutes >= 22 * 60 || totalMinutes < 6 * 60) return "A";
+  if (totalMinutes >= 6 * 60 && totalMinutes < 14 * 60) return "B";
+  return "C";
 }
 
-function minutesOfDay(d) {
-  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
-}
+function getShiftBoundsForDate(date, shiftKey) {
+  const d = new Date(date);
+  const start = new Date(d);
+  const end = new Date(d);
 
-function fmtHHMM(min) {
-  const m = Math.max(0, Math.min(1440, Math.round(min)));
-  const hh = String(Math.floor(m / 60)).padStart(2, "0");
-  const mm = String(m % 60).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-/* -------------------------------------------------------
-   OPTION B CORE:
-   Downtime = Alarm-based (aligned with Live Alarm)
--------------------------------------------------------- */
-
-function getEventTsMs(e) {
-  const ms = toLocalDT(e?.tsISO)?.getTime();
-  return Number.isFinite(ms) ? ms : NaN;
-}
-
-function isAlarmOnEvent(e) {
-  const raw = e || {};
-  const et = String(raw?.eventType || "").toUpperCase();
-
-  if (raw?.isActive === true || raw?.active === true) return true;
-  if (raw?.cleared === true || raw?.isCleared === true) return false;
-
-  if (et.includes("ALARM") && (et.includes("ON") || et.includes("START") || et.includes("ACTIVE") || et.includes("RAISE"))) return true;
-  if (et.includes("ON") || et.includes("START") || et.includes("ACTIVE") || et.includes("RAISE")) return true;
-
-  if (raw?.eventType === EVENT_TYPE?.DT_START) return true;
-
-  return false;
-}
-
-function isAlarmOffEvent(e) {
-  const raw = e || {};
-  const et = String(raw?.eventType || "").toUpperCase();
-
-  if (raw?.cleared === true || raw?.isCleared === true) return true;
-  if (raw?.isActive === true || raw?.active === true) return false;
-
-  if (et.includes("ALARM") && (et.includes("OFF") || et.includes("END") || et.includes("CLEAR") || et.includes("RESOLVE"))) return true;
-  if (et.includes("OFF") || et.includes("END") || et.includes("CLEAR") || et.includes("RESOLVE")) return true;
-
-  if (raw?.eventType === EVENT_TYPE?.DT_END) return true;
-
-  return false;
-}
-
-function buildActiveAlarmMapFromSessions(sessions, nowMs) {
-  const map = {};
-  for (const s of sessions || []) {
-    if (!s?.unitId) continue;
-    if (!s.isOpen) continue;
-    map[s.unitId] = {
-      unitId: s.unitId,
-      unitName: s.unitName || s.unitId,
-      category: normalizeText(s.category) || "Alarm",
-      reason: normalizeText(s.reason) || "Active alarm",
-      startMs: s.startMs,
-      startISO: s.startISO,
-      endMs: nowMs,
-      endISO: safeISO(nowMs),
-      isOpen: true,
-    };
-  }
-  return map;
-}
-
-/* ------------------- Persisted Downtime Memory ------------------- */
-
-function loadPersisted() {
-  if (typeof window === "undefined") return { sessions: [], lastCursorMs: 0 };
-  try {
-    const raw = window.localStorage.getItem(DT_PERSIST_KEY);
-    if (!raw) return { sessions: [], lastCursorMs: 0 };
-    const parsed = JSON.parse(raw);
-    const sessions = Array.isArray(parsed?.sessions) ? parsed.sessions : [];
-    const lastCursorMs = Number(parsed?.lastCursorMs || 0);
-    return { sessions, lastCursorMs };
-  } catch {
-    return { sessions: [], lastCursorMs: 0 };
-  }
-}
-
-function savePersisted(payload) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(DT_PERSIST_KEY, JSON.stringify(payload));
-  } catch {
-    // ignore
-  }
-}
-
-function normalizeSessionUnitName(unitsById, unitId, fallbackName) {
-  const u = unitsById?.get?.(unitId);
-  return u?.name || fallbackName || unitId;
-}
-
-/**
- * Ingest new alarm log events into persisted downtime sessions.
- * - Only uses new events after lastCursorMs
- * - Keeps sessions even if alarm log is cleared (persisted memory)
- */
-function ingestLogToPersistedSessions({
-  log,
-  nowMs,
-  unitsById,
-  persisted,
-}) {
-  const prevSessions = Array.isArray(persisted?.sessions) ? persisted.sessions : [];
-  const prevCursor = Number(persisted?.lastCursorMs || 0);
-
-  const list = Array.isArray(log) ? log : [];
-  if (!list.length) return { sessions: prevSessions, lastCursorMs: prevCursor, changed: false };
-
-  // Work in ASC order for ingestion
-  const asc = [...list]
-    .filter((n) => n && n.unitId)
-    .map((n) => ({ raw: n, unitId: n.unitId, ts: getEventTsMs(n), tsISO: n.tsISO }))
-    .filter((n) => Number.isFinite(n.ts))
-    .sort((a, b) => a.ts - b.ts);
-
-  // Only new events after cursor (strict)
-  const fresh = asc.filter((e) => e.ts > prevCursor);
-  if (!fresh.length) return { sessions: prevSessions, lastCursorMs: prevCursor, changed: false };
-
-  // Build open session map from prevSessions
-  const openByUnit = new Map();
-  for (const s of prevSessions) {
-    if (s?.unitId && s?.isOpen) openByUnit.set(s.unitId, s);
+  if (shiftKey === "A") {
+    const mins = getMinutesOfDay(d);
+    if (mins < 6 * 60) {
+      start.setDate(start.getDate() - 1);
+      start.setHours(22, 0, 0, 0);
+      end.setHours(6, 0, 0, 0);
+    } else {
+      start.setHours(22, 0, 0, 0);
+      end.setDate(end.getDate() + 1);
+      end.setHours(6, 0, 0, 0);
+    }
+  } else if (shiftKey === "B") {
+    start.setHours(6, 0, 0, 0);
+    end.setHours(14, 0, 0, 0);
+  } else {
+    start.setHours(14, 0, 0, 0);
+    end.setHours(22, 0, 0, 0);
   }
 
-  let sessions = [...prevSessions];
-  let cursor = prevCursor;
-  let changed = false;
+  return { start, end };
+}
 
-  for (const e of fresh) {
-    cursor = Math.max(cursor, e.ts);
+function getShiftKeyForDate(date) {
+  return getCurrentPlantShiftKey(date);
+}
 
-    const raw = e.raw;
-    const unitId = e.unitId;
-    const unitName = normalizeSessionUnitName(unitsById, unitId, raw?.unitName);
+function splitEntryAcrossShifts(entry) {
+  const explicitShift = entry?.shiftKey;
+  const hasExplicitShift = SHIFT_ORDER.includes(explicitShift);
 
-    const on = isAlarmOnEvent(raw);
-    const off = isAlarmOffEvent(raw);
+  const startedAt = toDateSafe(entry?.startedAt);
+  const endedAt = toDateSafe(entry?.endedAt);
+  const fallbackDuration = Math.max(0, Number(entry?.durationMin || 0));
 
-    const cat = normalizeText(raw?.category) || "Alarm";
-    const reason = normalizeText(raw?.reason) || normalizeText(raw?.message) || "Alarm active";
-
-    if (on && !off) {
-      // Start session if not already open
-      if (!openByUnit.has(unitId)) {
-        const sess = {
-          unitId,
-          unitName,
-          startMs: e.ts,
-          endMs: nowMs,
-          startISO: raw?.tsISO || safeISO(e.ts),
-          endISO: safeISO(nowMs),
-          category: cat,
-          reason,
-          isOpen: true,
-          // minor trace
-          openedByEventId: raw?.id || "",
-        };
-        openByUnit.set(unitId, sess);
-        sessions = [sess, ...sessions].slice(0, 3000);
-        changed = true;
-      }
-      continue;
+  if (!startedAt || !endedAt || endedAt <= startedAt) {
+    if (hasExplicitShift) {
+      return [{ shiftKey: explicitShift, durationMin: fallbackDuration, entry }];
     }
 
-    if (off) {
-      const open = openByUnit.get(unitId);
-      if (open) {
-        // Close existing open session
-        const endMs = e.ts;
-        open.endMs = endMs;
-        open.endISO = raw?.tsISO || safeISO(endMs);
-        open.isOpen = false;
-        open.closedByEventId = raw?.id || "";
-        openByUnit.delete(unitId);
-        changed = true;
-      }
-      continue;
-    }
+    return [
+      {
+        shiftKey: getCurrentPlantShiftKey(),
+        durationMin: fallbackDuration,
+        entry,
+      },
+    ];
   }
 
-  // Keep open sessions "live" endMs at nowMs for charts
-  if (openByUnit.size) {
-    for (const s of sessions) {
-      if (s?.isOpen) {
-        s.endMs = nowMs;
-        s.endISO = safeISO(nowMs);
-      }
+  const parts = [];
+  let cursor = new Date(startedAt);
+  const finish = new Date(endedAt);
+
+  while (cursor < finish) {
+    const shiftKey = getShiftKeyForDate(cursor);
+    const { end } = getShiftBoundsForDate(cursor, shiftKey);
+    const segmentEnd = end < finish ? end : finish;
+    const durationMin = Math.max(0, Math.round((segmentEnd - cursor) / 60000));
+
+    if (durationMin > 0) {
+      parts.push({ shiftKey, durationMin, entry });
     }
-    changed = true;
+
+    cursor = new Date(segmentEnd);
   }
 
-  return { sessions, lastCursorMs: cursor, changed };
+  if (!parts.length && fallbackDuration > 0) {
+    parts.push({
+      shiftKey: hasExplicitShift ? explicitShift : getShiftKeyForDate(startedAt),
+      durationMin: fallbackDuration,
+      entry,
+    });
+  }
+
+  return parts;
 }
 
-/* ------------------- Aggregations for Daily Reporting ------------------- */
-
-function aggregateReasons(sessions, rangeStart, rangeEnd, unitIdOrAll) {
-  const map = new Map();
-
-  for (const s of sessions || []) {
-    if (unitIdOrAll && unitIdOrAll !== "ALL" && s.unitId !== unitIdOrAll) continue;
-
-    const ms = clipIntervalMs(new Date(s.startMs), new Date(s.endMs), rangeStart, rangeEnd);
-    if (ms <= 0) continue;
-
-    const cat = normalizeText(s.category) || "Alarm";
-    const reason = normalizeText(s.reason) || "Alarm active";
-    const key = `${cat}|||${reason}`;
-
-    const prev = map.get(key) || { category: cat, reason, ms: 0, count: 0 };
-    prev.ms += ms;
-    prev.count += 1;
-    map.set(key, prev);
-  }
-
-  return [...map.values()].sort((a, b) => b.ms - a.ms);
+function getEntryCategory(entry) {
+  return entry?.customCategory || entry?.category || "UNCATEGORIZED";
 }
 
-function aggregateShiftDowntimeByCategory(sessions, dayLocal, unitIdOrAll) {
-  const shifts = getShiftWindowsForDay(dayLocal);
-  const out = new Map();
-  shifts.forEach((s) => out.set(s.key, new Map()));
+function getEntryReason(entry) {
+  return entry?.customReason || entry?.reason || "Unknown";
+}
 
-  for (const sess of sessions || []) {
-    if (unitIdOrAll && unitIdOrAll !== "ALL" && sess.unitId !== unitIdOrAll) continue;
+function isPlannedCategory(category) {
+  const upper = String(category || "").toUpperCase();
+  return upper === "BREAK";
+}
 
-    const sStart = new Date(sess.startMs);
-    const sEnd = new Date(sess.endMs);
-    if (sEnd <= sStart) continue;
+function mapToSortedList(mapObj) {
+  return Object.entries(mapObj || {})
+    .map(([label, value]) => ({ label, value: Math.round(Number(value || 0)) }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+}
 
-    const cat = normalizeText(sess.category) || "Alarm";
-
-    for (const sh of shifts) {
-      const ms = clipIntervalMs(sStart, sEnd, sh.start, sh.end);
-      if (ms <= 0) continue;
-
-      const mapCat = out.get(sh.key);
-      const prev = mapCat.get(cat) || { ms: 0, count: 0 };
-      prev.ms += ms;
-      prev.count += 1;
-      mapCat.set(cat, prev);
-    }
-  }
-
-  const categories = new Set();
-  for (const m of out.values()) for (const c of m.keys()) categories.add(c);
-
-  const rows = shifts.map((sh) => {
-    const m = out.get(sh.key);
-    const row = { shift: sh.key, label: sh.label, totalMinutes: 0, events: 0 };
-    for (const c of categories) {
-      const v = m.get(c);
-      const minutes = msToMinutes(v?.ms || 0);
-      row[c] = minutes;
-      row.totalMinutes += minutes;
-      row.events += v?.count || 0;
-    }
-    return row;
+function pruneLiveLog(list) {
+  const now = Date.now();
+  return (Array.isArray(list) ? list : []).filter((n) => {
+    const ts = n?.tsISO ? Date.parse(n.tsISO) : NaN;
+    return Number.isFinite(ts) && now - ts <= LIVE_RETENTION_MS;
   });
-
-  return { rows, categories: [...categories] };
 }
 
-function aggregateTopReasonsByShift(sessions, dayLocal, unitIdOrAll, topN = 12) {
-  const shifts = getShiftWindowsForDay(dayLocal);
-  const map = new Map();
-
-  for (const sess of sessions || []) {
-    if (unitIdOrAll && unitIdOrAll !== "ALL" && sess.unitId !== unitIdOrAll) continue;
-
-    const sStart = new Date(sess.startMs);
-    const sEnd = new Date(sess.endMs);
-    if (sEnd <= sStart) continue;
-
-    const cat = normalizeText(sess.category) || "Alarm";
-    const reason = normalizeText(sess.reason) || "Alarm active";
-    const k = `${cat}|||${reason}`;
-
-    let rec = map.get(k);
-    if (!rec) {
-      rec = { category: cat, reason, A: 0, B: 0, C: 0, totalMs: 0, count: 0 };
-      map.set(k, rec);
-    }
-
-    for (const sh of shifts) {
-      const ms = clipIntervalMs(sStart, sEnd, sh.start, sh.end);
-      if (ms <= 0) continue;
-      rec[sh.key] += ms;
-      rec.totalMs += ms;
-      rec.count += 1;
-    }
-  }
-
-  const list = [...map.values()].sort((a, b) => b.totalMs - a.totalMs).slice(0, topN);
-  const maxMin = Math.max(1, ...list.map((r) => msToMinutes(r.totalMs)));
-
-  return list.map((r) => {
-    const full = `${r.category} — ${r.reason}`;
-    const label = full.length > 46 ? `${full.slice(0, 44)}…` : full;
-
-    const A = msToMinutes(r.A);
-    const B = msToMinutes(r.B);
-    const C = msToMinutes(r.C);
-    const total = msToMinutes(r.totalMs);
-
+function resolveUnitStation(unit) {
+  if (!unit) {
     return {
-      key: `${r.category}|||${r.reason}`,
-      label,
-      full,
-      A,
-      B,
-      C,
-      total,
-      count: r.count,
-      intensity: clamp(Math.round((total / maxMin) * 100), 1, 100),
+      scopeType: SCOPE_TYPE.UNIT,
+      stationId: null,
+      stationName: null,
     };
-  });
-}
-
-function bucketDailyDowntimeMinutes(sessions, daysBack, nowLocal, unitIdOrAll) {
-  const end = endOfDayLocal(nowLocal);
-  const start = new Date(end);
-  start.setDate(start.getDate() - (daysBack - 1));
-  start.setHours(0, 0, 0, 0);
-
-  const buckets = [];
-  for (let i = 0; i < daysBack; i += 1) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    const s = startOfDayLocal(d);
-    const e = endOfDayLocal(d);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    buckets.push({ key, date: key, start: s, end: e, minutes: 0, events: 0 });
   }
 
-  for (const sess of sessions || []) {
-    if (unitIdOrAll && unitIdOrAll !== "ALL" && sess.unitId !== unitIdOrAll) continue;
-
-    const sStart = new Date(sess.startMs);
-    const sEnd = new Date(sess.endMs);
-    if (sEnd <= sStart) continue;
-
-    for (const b of buckets) {
-      const ms = clipIntervalMs(sStart, sEnd, b.start, b.end);
-      if (ms <= 0) continue;
-      b.minutes += msToMinutes(ms);
-      b.events += 1;
-    }
-  }
-
-  return buckets;
-}
-
-function buildParetoToday(reasons, maxBars = 12) {
-  const rows = (Array.isArray(reasons) ? reasons : []).filter((r) => (r?.ms || 0) > 0).sort((a, b) => b.ms - a.ms);
-
-  const top = rows.slice(0, maxBars);
-  const totalMs = top.reduce((acc, r) => acc + (r.ms || 0), 0) || 0;
-
-  let cum = 0;
-  return top.map((r, idx) => {
-    const full = `${r.category} — ${r.reason}`;
-    const short = full.length > 28 ? `${full.slice(0, 26)}…` : full;
-
-    const minutes = msToMinutes(r.ms);
-    cum += r.ms || 0;
-    const cumPct = totalMs ? Math.round((cum / totalMs) * 100) : 0;
-
+  if (unit.activeStationId || unit.activeStationName) {
     return {
-      idx: idx + 1,
-      short,
-      full,
-      minutes,
-      cumPct,
-      count: r.count || 0,
+      scopeType: SCOPE_TYPE.STATION,
+      stationId: unit.activeStationId || null,
+      stationName: unit.activeStationName || null,
     };
-  });
-}
-
-function buildTodayGantt(sessions, dayLocal, unitIdOrAll, topUnits = 8) {
-  const dayStart = startOfDayLocal(dayLocal);
-  const dayEnd = endOfDayLocal(dayLocal);
-
-  const unitAgg = new Map();
-  for (const s of sessions || []) {
-    if (unitIdOrAll && unitIdOrAll !== "ALL" && s.unitId !== unitIdOrAll) continue;
-
-    const ms = clipIntervalMs(new Date(s.startMs), new Date(s.endMs), dayStart, dayEnd);
-    if (ms <= 0) continue;
-
-    const key = s.unitId;
-    const prev = unitAgg.get(key) || { unitId: s.unitId, unitName: s.unitName || s.unitId, ms: 0 };
-    prev.ms += ms;
-    unitAgg.set(key, prev);
   }
-
-  const top = [...unitAgg.values()].sort((a, b) => b.ms - a.ms).slice(0, topUnits);
-
-  const rows = top.map((u) => {
-    const segs = [];
-
-    for (const s of sessions || []) {
-      if (s.unitId !== u.unitId) continue;
-
-      const sStart = new Date(s.startMs);
-      const sEnd = new Date(s.endMs);
-      const ms = clipIntervalMs(sStart, sEnd, dayStart, dayEnd);
-      if (ms <= 0) continue;
-
-      const clipS = new Date(Math.max(sStart.getTime(), dayStart.getTime()));
-      const clipE = new Date(Math.min(sEnd.getTime(), dayEnd.getTime()));
-
-      const leftMin = minutesOfDay(clipS);
-      const rightMin = minutesOfDay(clipE);
-      const wMin = Math.max(1, rightMin - leftMin);
-
-      const cat = normalizeText(s.category) || "Alarm";
-      const reason = normalizeText(s.reason) || "Alarm active";
-
-      segs.push({
-        leftMin,
-        wMin,
-        category: cat,
-        reason,
-        full: `${cat} — ${reason}`,
-        startLabel: fmtHHMM(leftMin),
-        endLabel: fmtHHMM(leftMin + wMin),
-        minutes: msToMinutes(ms),
-      });
-    }
-
-    segs.sort((a, b) => a.leftMin - b.leftMin);
-
-    return {
-      unitId: u.unitId,
-      unitName: u.unitName,
-      minutes: msToMinutes(u.ms),
-      segments: segs,
-    };
-  });
-
-  return rows;
-}
-
-function categoryColor(cat) {
-  const PALETTE = [
-    "rgba(59,130,246,0.82)",
-    "rgba(245,158,11,0.82)",
-    "rgba(34,197,94,0.82)",
-    "rgba(239,68,68,0.82)",
-    "rgba(167,139,250,0.82)",
-    "rgba(20,184,166,0.82)",
-    "rgba(244,114,182,0.82)",
-    "rgba(234,179,8,0.82)",
-    "rgba(251,113,133,0.82)",
-    "rgba(148,163,184,0.70)",
-  ];
-  return PALETTE[paletteIdx(cat)];
-}
-
-function buildDailyUnitTotals(sessions, dayLocal, unitIdOrAll = "ALL") {
-  const dayStart = startOfDayLocal(dayLocal);
-  const dayEnd = endOfDayLocal(dayLocal);
-
-  const map = new Map();
-
-  for (const s of sessions || []) {
-    if (unitIdOrAll !== "ALL" && s.unitId !== unitIdOrAll) continue;
-
-    const ms = clipIntervalMs(new Date(s.startMs), new Date(s.endMs), dayStart, dayEnd);
-    if (ms <= 0) continue;
-
-    const prev = map.get(s.unitId) || { unitId: s.unitId, unitName: s.unitName || s.unitId, ms: 0, events: 0 };
-    prev.ms += ms;
-    prev.events += 1;
-    map.set(s.unitId, prev);
-  }
-
-  const rows = [...map.values()]
-    .map((r) => ({ ...r, minutes: msToMinutes(r.ms) }))
-    .sort((a, b) => b.minutes - a.minutes);
-
-  const totalMinutesAll = rows.reduce((acc, r) => acc + (r.minutes || 0), 0);
-  return { rows, totalMinutesAll };
-}
-
-function buildTopReasonForUnitToday(sessions, dayLocal, unitId) {
-  const dayStart = startOfDayLocal(dayLocal);
-  const dayEnd = endOfDayLocal(dayLocal);
-
-  const map = new Map();
-
-  for (const s of sessions || []) {
-    if (s.unitId !== unitId) continue;
-
-    const ms = clipIntervalMs(new Date(s.startMs), new Date(s.endMs), dayStart, dayEnd);
-    if (ms <= 0) continue;
-
-    const cat = normalizeText(s.category) || "Alarm";
-    const reason = normalizeText(s.reason) || "Alarm active";
-    const key = `${cat}|||${reason}`;
-
-    const prev = map.get(key) || { category: cat, reason, ms: 0, count: 0 };
-    prev.ms += ms;
-    prev.count += 1;
-    map.set(key, prev);
-  }
-
-  const list = [...map.values()].sort((a, b) => b.ms - a.ms);
-  const totalMs = list.reduce((acc, r) => acc + (r.ms || 0), 0) || 0;
-
-  const top = list[0] || null;
-  if (!top) return null;
-
-  const pct = totalMs ? Math.round((top.ms / totalMs) * 100) : 0;
 
   return {
-    category: top.category,
-    reason: top.reason,
-    minutes: msToMinutes(top.ms),
-    events: top.count,
-    pctOfUnit: pct,
-    totalUnitMinutes: msToMinutes(totalMs),
+    scopeType: SCOPE_TYPE.UNIT,
+    stationId: null,
+    stationName: null,
   };
 }
 
-/* ------------------- UI primitives ------------------- */
+function buildBusinessDateForShift(tsISO) {
+  const date = new Date(tsISO);
+  const mins = getMinutesOfDay(date);
+  const d = new Date(date);
 
-function Panel({ title, subtitle, icon, right, children }) {
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        border: `1px solid ${PAGE.border}`,
-        bgcolor: PAGE.panel,
-        borderRadius: 3,
-        overflow: "hidden",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-      }}
-    >
-      <Box sx={{ p: 1.6, borderBottom: `1px solid ${PAGE.borderSoft}`, bgcolor: "rgba(255,255,255,0.02)" }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 950, fontSize: 14, color: PAGE.text }} noWrap>
-              {title}
-            </Typography>
-            {subtitle ? (
-              <Typography sx={{ color: PAGE.subtext, fontSize: 12, mt: 0.4 }} noWrap title={subtitle}>
-                {subtitle}
-              </Typography>
-            ) : null}
-          </Box>
-
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ color: "rgba(255,255,255,0.72)" }}>
-            {icon}
-            {right ? <Box sx={{ ml: 1 }}>{right}</Box> : null}
-          </Stack>
-        </Stack>
-      </Box>
-
-      <Box sx={{ p: 1.6 }}>{children}</Box>
-    </Paper>
-  );
-}
-
-function MetricStrip({ selectionLabel, activeCount, onReset, kpis, rightControls }) {
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        border: `1px solid ${PAGE.border}`,
-        bgcolor: PAGE.panel,
-        borderRadius: 3,
-        overflow: "hidden",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-      }}
-    >
-      <Box sx={{ p: 1.4, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap" }}>
-        <Stack spacing={0.35} sx={{ minWidth: 0 }}>
-          <Typography sx={{ color: PAGE.text, fontWeight: 950, fontSize: 14 }} noWrap>
-            Downtime Intelligence
-          </Typography>
-          <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap>
-            Daily (3 shifts) • Alarm-based downtime • Selection: {selectionLabel}
-          </Typography>
-        </Stack>
-
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Chip
-            icon={<BoltRoundedIcon />}
-            size="small"
-            label={`Active: ${activeCount}`}
-            variant="outlined"
-            sx={{ color: PAGE.subtext, borderColor: "rgba(255,255,255,0.14)" }}
-          />
-
-          {kpis}
-
-          {rightControls}
-
-          <Tooltip title="Reset (Daily default)" arrow>
-            <IconButton
-              size="small"
-              onClick={onReset}
-              sx={{
-                color: "rgba(255,255,255,0.78)",
-                border: `1px solid ${PAGE.borderSoft}`,
-                borderRadius: 2,
-                bgcolor: "rgba(255,255,255,0.03)",
-              }}
-            >
-              <RestartAltRoundedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-      </Box>
-    </Paper>
-  );
-}
-
-/* ------------------- Charts ------------------- */
-
-function ShiftDowntimeStacked({ rows, categories }) {
-  const data = Array.isArray(rows) ? rows : [];
-  const cats = Array.isArray(categories) ? categories : [];
-
-  if (!data.length) {
-    return <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>No shift data for today.</Typography>;
+  if (mins < 6 * 60) {
+    d.setDate(d.getDate() - 1);
   }
 
-  return (
-    <Box sx={{ width: "100%", height: 320 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 14, right: 18, left: 6, bottom: 10 }}>
-          <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="shift" tick={{ fill: "rgba(255,255,255,0.78)", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-          <YAxis tick={{ fill: "rgba(255,255,255,0.62)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-
-          <RTooltip
-            content={({ active, payload, label }) => {
-              if (!active || !payload?.length) return null;
-              const row = payload?.[0]?.payload || {};
-              const total = row.totalMinutes || 0;
-              const events = row.events || 0;
-
-              return (
-                <Box sx={{ p: 1.1, borderRadius: 2, bgcolor: "rgba(10,14,18,0.95)", border: "1px solid rgba(255,255,255,0.10)", maxWidth: 520 }}>
-                  <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 950, mb: 0.6 }}>
-                    Shift {label} • {formatMinutes(total)}
-                  </Typography>
-                  <Typography sx={{ color: PAGE.muted, fontSize: 11, mb: 0.6 }}>Events: {events}</Typography>
-
-                  <Divider sx={{ borderColor: "rgba(255,255,255,0.08)", mb: 0.6 }} />
-
-                  <Stack spacing={0.4}>
-                    {cats.map((c) => {
-                      const v = row[c] || 0;
-                      if (!v) return null;
-                      return (
-                        <Stack key={c} direction="row" justifyContent="space-between" sx={{ gap: 1 }}>
-                          <Typography sx={{ color: PAGE.subtext, fontSize: 11 }} noWrap title={String(c)}>
-                            {String(c)}
-                          </Typography>
-                          <Typography sx={{ color: PAGE.text, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
-                            {formatMinutes(v)}
-                          </Typography>
-                        </Stack>
-                      );
-                    })}
-                  </Stack>
-                </Box>
-              );
-            }}
-          />
-
-          {/* total label */}
-          <Bar dataKey="totalMinutes" fill="rgba(255,255,255,0.00)" isAnimationActive={false}>
-            <LabelList
-              dataKey="totalMinutes"
-              position="top"
-              formatter={(v) => formatMinutes(v)}
-              style={{ fill: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 950 }}
-            />
-          </Bar>
-
-          {cats.map((c) => (
-            <Bar key={c} dataKey={c} stackId="dt" fill={categoryColor(c)} radius={[10, 10, 0, 0]} />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-
-      {cats.length ? (
-        <Box sx={{ mt: 1.1, display: "flex", flexWrap: "wrap", gap: 1 }}>
-          {cats.slice(0, 10).map((c) => (
-            <Chip
-              key={c}
-              size="small"
-              label={c}
-              variant="outlined"
-              sx={{
-                color: "rgba(255,255,255,0.72)",
-                borderColor: "rgba(255,255,255,0.14)",
-                bgcolor: "rgba(255,255,255,0.02)",
-              }}
-            />
-          ))}
-          {cats.length > 10 ? (
-            <Chip size="small" label={`+${cats.length - 10} more`} variant="outlined" sx={{ color: PAGE.muted, borderColor: "rgba(255,255,255,0.12)" }} />
-          ) : null}
-        </Box>
-      ) : null}
-    </Box>
-  );
+  return d.toISOString().slice(0, 10);
 }
 
-function ReasonShiftHeatmap({ rows }) {
-  const data = Array.isArray(rows) ? rows : [];
-  if (!data.length) {
-    return <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>No shift reason breakdown for today.</Typography>;
-  }
+function buildEventPayload({
+  unit,
+  tsISO,
+  eventType,
+  severity,
+  category,
+  categoryCode,
+  reason,
+  reasonCode,
+  text,
+  sourceType = SOURCE_TYPE.OPERATOR,
+  linkedEventId = null,
+}) {
+  const date = new Date(tsISO);
+  const shiftKey = getCurrentPlantShiftKey(date);
+  const businessDate = buildBusinessDateForShift(tsISO);
+  const stationMeta = resolveUnitStation(unit);
 
-  const maxCell = Math.max(1, ...data.map((r) => Math.max(r.A || 0, r.B || 0, r.C || 0)));
-  const cellBg = (v) => {
-    const t = clamp(v / maxCell, 0, 1);
-    const a = 0.10 + t * 0.42;
-    return `rgba(59,130,246,${a.toFixed(3)})`;
+  return {
+    id: makeId(),
+    tsISO,
+    businessDate,
+    shiftKey,
+    eventType,
+    sourceType,
+    scopeType: stationMeta.scopeType,
+    unitId: unit?.id || null,
+    unitName: unit?.name || "Unknown Unit",
+    stationId: stationMeta.stationId,
+    stationName: stationMeta.stationName,
+    severity,
+    category,
+    categoryCode,
+    reason,
+    reasonCode,
+    text,
+    linkedEventId,
   };
-
-  const headerSx = {
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    borderBottom: `1px solid ${PAGE.borderSoft}`,
-    pb: 1,
-  };
-
-  return (
-    <Box>
-      <Box sx={{ display: "grid", gridTemplateColumns: "1.6fr 0.45fr 0.45fr 0.45fr 0.55fr", gap: 1, alignItems: "center", mb: 1.1 }}>
-        <Typography sx={headerSx}>Category — Reason</Typography>
-        <Typography sx={headerSx} align="center">
-          A
-        </Typography>
-        <Typography sx={headerSx} align="center">
-          B
-        </Typography>
-        <Typography sx={headerSx} align="center">
-          C
-        </Typography>
-        <Typography sx={headerSx} align="right">
-          Total
-        </Typography>
-      </Box>
-
-      <Stack spacing={0.9}>
-        {data.map((r) => {
-          const a = r.A || 0;
-          const b = r.B || 0;
-          const c = r.C || 0;
-          const total = r.total || 0;
-
-          const pillSx = (v) => ({
-            borderRadius: 2,
-            border: "1px solid rgba(255,255,255,0.10)",
-            bgcolor: cellBg(v),
-            px: 1,
-            py: 0.65,
-            textAlign: "center",
-          });
-
-          return (
-            <Box key={r.key} sx={{ display: "grid", gridTemplateColumns: "1.6fr 0.45fr 0.45fr 0.45fr 0.55fr", gap: 1, alignItems: "center" }}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 900 }} noWrap title={r.full}>
-                  {r.label}
-                </Typography>
-                <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.25 }} noWrap>
-                  Events: {r.count || 0} • Intensity: {r.intensity}%
-                </Typography>
-              </Box>
-
-              <Box sx={pillSx(a)}>
-                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 900 }}>{a ? formatMinutes(a) : "—"}</Typography>
-              </Box>
-              <Box sx={pillSx(b)}>
-                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 900 }}>{b ? formatMinutes(b) : "—"}</Typography>
-              </Box>
-              <Box sx={pillSx(c)}>
-                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 900 }}>{c ? formatMinutes(c) : "—"}</Typography>
-              </Box>
-
-              <Box sx={{ textAlign: "right" }}>
-                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 950, whiteSpace: "nowrap" }}>
-                  {formatMinutes(total)}
-                </Typography>
-                <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.2, whiteSpace: "nowrap" }}>
-                  Score: {Math.round((total / Math.max(1, maxCell)) * 100)}%
-                </Typography>
-              </Box>
-            </Box>
-          );
-        })}
-      </Stack>
-
-      <Divider sx={{ mt: 1.4, borderColor: PAGE.borderSoft }} />
-
-      <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 1 }}>
-        Values are minutes clipped to shift windows (A/B/C). Intensity scales within today’s top reasons.
-      </Typography>
-    </Box>
-  );
 }
 
-function DailyTrend14d({ data }) {
-  const rows = Array.isArray(data) ? data : [];
-  if (!rows.length) return <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>No daily trend available.</Typography>;
+function deriveDowntimeState(log) {
+  const liveLog = pruneLiveLog(log);
+  const asc = [...liveLog].sort((a, b) => Date.parse(a.tsISO || 0) - Date.parse(b.tsISO || 0));
+  const now = Date.now();
 
-  return (
-    <Box sx={{ width: "100%", height: 240 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rows} margin={{ top: 16, right: 18, left: 6, bottom: 6 }}>
-          <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-          <YAxis tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-          <RTooltip
-            content={({ active, payload, label }) => {
-              if (!active || !payload?.length) return null;
-              const p = payload[0]?.payload || {};
-              return (
-                <Box sx={{ p: 1.1, borderRadius: 2, bgcolor: "rgba(10,14,18,0.95)", border: "1px solid rgba(255,255,255,0.10)" }}>
-                  <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 950, mb: 0.5 }}>{label}</Typography>
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>Downtime: {formatMinutes(p.minutes || 0)}</Typography>
-                  <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.3 }}>Events: {p.events || 0}</Typography>
-                </Box>
-              );
-            }}
-          />
-          <Area type="monotone" dataKey="minutes" stroke="rgba(59,130,246,0.95)" fill="rgba(59,130,246,0.18)" />
-          <Line type="monotone" dataKey="minutes" stroke="rgba(59,130,246,0.95)" strokeWidth={2.4} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </Box>
-  );
-}
+  const activeDowntimeMap = {};
+  const openDowntimeStartMap = {};
+  const sessions = [];
 
-function ParetoToday({ data }) {
-  const rows = Array.isArray(data) ? data : [];
-  if (!rows.length) return <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>No Pareto data for today.</Typography>;
+  asc.forEach((n) => {
+    const unitId = n?.unitId;
+    if (!unitId) return;
 
-  return (
-    <Box sx={{ width: "100%", height: 320 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 18, right: 18, left: 6, bottom: 10 }}>
-          <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="idx" tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-          <YAxis yAxisId="min" tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.12)" }} />
-          <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} />
+    const type = String(n.eventType || "");
 
-          <RTooltip
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const p = payload?.[0]?.payload || {};
-              return (
-                <Box sx={{ p: 1.1, borderRadius: 2, bgcolor: "rgba(10,14,18,0.95)", border: "1px solid rgba(255,255,255,0.10)", maxWidth: 520 }}>
-                  <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 950, mb: 0.5 }} noWrap title={p.full}>
-                    {p.full}
-                  </Typography>
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>Minutes: {formatMinutes(p.minutes || 0)}</Typography>
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>Cumulative: {p.cumPct || 0}%</Typography>
-                  <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.3 }}>Events: {p.count || 0}</Typography>
-                </Box>
-              );
-            }}
-          />
+    if (type === EVENT_TYPE.DT_START) {
+      activeDowntimeMap[unitId] = {
+        startISO: n.tsISO,
+        severity: n.severity || SEVERITY.LOW,
+        stationId: n.stationId || null,
+        stationName: n.stationName || null,
+        startEventId: n.id,
+        category: n.category,
+        reason: n.reason,
+      };
+      openDowntimeStartMap[unitId] = n;
+      return;
+    }
 
-          <Bar yAxisId="min" dataKey="minutes" fill="rgba(59,130,246,0.85)" radius={[10, 10, 0, 0]}>
-            <LabelList
-              dataKey="minutes"
-              position="top"
-              formatter={(v) => (v ? formatMinutes(v) : "")}
-              style={{ fill: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: 900 }}
-            />
-          </Bar>
+    if (type === EVENT_TYPE.DT_END) {
+      const startEvent = openDowntimeStartMap[unitId] || null;
+      const durationMs =
+        startEvent?.tsISO && n?.tsISO ? Math.max(0, Date.parse(n.tsISO) - Date.parse(startEvent.tsISO)) : 0;
 
-          <Line yAxisId="pct" type="monotone" dataKey="cumPct" stroke="rgba(245,158,11,0.95)" strokeWidth={2.6} dot={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
+      sessions.push({
+        id: n.id || `dt-end-${unitId}`,
+        kind: "DOWNTIME",
+        status: "CLOSED",
+        unitId,
+        unitName: n.unitName || startEvent?.unitName || "—",
+        stationId: n.stationId || startEvent?.stationId || null,
+        stationName: n.stationName || startEvent?.stationName || null,
+        severity: startEvent?.severity || n.severity || SEVERITY.LOW,
+        category: startEvent?.category || n.category || "Downtime",
+        reason: startEvent?.reason || n.reason || "—",
+        startISO: startEvent?.tsISO || null,
+        endISO: n.tsISO || null,
+        durationMs,
+        durationLabel: formatDurationMs(durationMs),
+        businessDate: startEvent?.businessDate || n.businessDate || null,
+        shiftKey: startEvent?.shiftKey || n.shiftKey || null,
+        sourceType: startEvent?.sourceType || n.sourceType || SOURCE_TYPE.OPERATOR,
+        text: startEvent?.text || n.text || "",
+      });
 
-      <Divider sx={{ mt: 1.1, borderColor: PAGE.borderSoft }} />
-      <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 1 }}>
-        Pareto uses today’s top reasons (alarm-derived). Orange line is cumulative percentage.
-      </Typography>
-    </Box>
-  );
-}
-
-function TodayShiftGantt({ rows, dayLocal }) {
-  const data = Array.isArray(rows) ? rows : [];
-  if (!data.length) return <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>No timeline data for today.</Typography>;
-
-  const shifts = getShiftWindowsForDay(dayLocal);
-  const day0 = startOfDayLocal(dayLocal);
-
-  const shiftBands = shifts.map((s) => {
-    const a = minutesOfDay(s.start);
-    let b = minutesOfDay(s.end);
-    if (s.key === "C") b = 1440;
-    const leftPct = (a / 1440) * 100;
-    const widthPct = ((b - a) / 1440) * 100;
-    return { key: s.key, label: s.label, leftPct, widthPct, startLabel: fmtHHMM(a), endLabel: fmtHHMM(b) };
+      delete activeDowntimeMap[unitId];
+      delete openDowntimeStartMap[unitId];
+    }
   });
 
-  const ticks = [0, 240, 480, 720, 960, 1200, 1440];
+  Object.values(openDowntimeStartMap).forEach((n) => {
+    const durationMs = n?.tsISO ? Math.max(0, now - Date.parse(n.tsISO)) : 0;
+
+    sessions.push({
+      id: `open-dt-${n.id}`,
+      kind: "DOWNTIME",
+      status: "ACTIVE",
+      unitId: n.unitId,
+      unitName: n.unitName || "—",
+      stationId: n.stationId || null,
+      stationName: n.stationName || null,
+      severity: n.severity || SEVERITY.LOW,
+      category: n.category || "Downtime",
+      reason: n.reason || "—",
+      startISO: n.tsISO || null,
+      endISO: null,
+      durationMs,
+      durationLabel: formatDurationMs(durationMs),
+      businessDate: n.businessDate || null,
+      shiftKey: n.shiftKey || null,
+      sourceType: n.sourceType || SOURCE_TYPE.OPERATOR,
+      text: n.text || "",
+    });
+  });
+
+  sessions.sort((a, b) => Date.parse(b.startISO || 0) - Date.parse(a.startISO || 0));
+
+  return {
+    liveLog,
+    activeDowntimeMap,
+    openDowntimeStartMap,
+    sessionHistory: sessions,
+  };
+}
+
+function buildCanonicalEntriesFromSessions(sessions = []) {
+  const systemEntries = [];
+  const manualEntries = [];
+
+  sessions.forEach((session) => {
+    const startedAt = session?.startISO || null;
+    const endedAt = session?.endISO || new Date().toISOString();
+    const durationMin = Math.max(0, Math.round(Number(session?.durationMs || 0) / 60000));
+    const sourceType = session?.sourceType || SOURCE_TYPE.OPERATOR;
+    const isManual = sourceType === SOURCE_TYPE.OPERATOR || sourceType === SOURCE_TYPE.TEAM_LEAD;
+
+    const entry = {
+      id: session.id,
+      shiftKey: session.shiftKey,
+      startedAt,
+      endedAt,
+      durationMin,
+      category: session.category || "UNCATEGORIZED",
+      reason: session.reason || "Unknown",
+      customCategory: "",
+      customReason: "",
+      note: session.text || "",
+      source: isManual ? "team_lead_manual" : "system",
+      sourceType,
+      unitId: session.unitId,
+      unitName: session.unitName,
+      stationId: session.stationId || null,
+      stationName: session.stationName || null,
+      severity: session.severity || SEVERITY.LOW,
+      status: session.status || "CLOSED",
+    };
+
+    if (isManual) {
+      manualEntries.push(entry);
+    } else {
+      systemEntries.push(entry);
+    }
+  });
+
+  return { systemEntries, manualEntries };
+}
+
+function buildDowntimeAnalytics(systemEntries = [], manualEntries = [], toleranceMin = DEFAULT_TOLERANCE_MIN) {
+  const perShift = {
+    A: {
+      planned: 0,
+      systemUnplanned: 0,
+      manualUnplanned: 0,
+      unplannedMerged: 0,
+      allActual: 0,
+      categoriesSystem: {},
+      categoriesManual: {},
+      categoriesUnplannedMerged: {},
+      reasonsUnplannedMerged: {},
+    },
+    B: {
+      planned: 0,
+      systemUnplanned: 0,
+      manualUnplanned: 0,
+      unplannedMerged: 0,
+      allActual: 0,
+      categoriesSystem: {},
+      categoriesManual: {},
+      categoriesUnplannedMerged: {},
+      reasonsUnplannedMerged: {},
+    },
+    C: {
+      planned: 0,
+      systemUnplanned: 0,
+      manualUnplanned: 0,
+      unplannedMerged: 0,
+      allActual: 0,
+      categoriesSystem: {},
+      categoriesManual: {},
+      categoriesUnplannedMerged: {},
+      reasonsUnplannedMerged: {},
+    },
+  };
+
+  function addToMap(target, key, value) {
+    const safeKey = key || "Unknown";
+    target[safeKey] = (target[safeKey] || 0) + Number(value || 0);
+  }
+
+  systemEntries.forEach((entry) => {
+    splitEntryAcrossShifts(entry).forEach((part) => {
+      const bucket = perShift[part.shiftKey];
+      if (!bucket) return;
+
+      const category = getEntryCategory(entry);
+      const reason = getEntryReason(entry);
+      const planned = isPlannedCategory(category);
+
+      bucket.allActual += part.durationMin;
+
+      if (planned) {
+        bucket.planned += part.durationMin;
+      } else {
+        bucket.systemUnplanned += part.durationMin;
+        bucket.unplannedMerged += part.durationMin;
+        addToMap(bucket.categoriesSystem, category, part.durationMin);
+        addToMap(bucket.categoriesUnplannedMerged, category, part.durationMin);
+        addToMap(bucket.reasonsUnplannedMerged, reason, part.durationMin);
+      }
+    });
+  });
+
+  manualEntries.forEach((entry) => {
+    splitEntryAcrossShifts(entry).forEach((part) => {
+      const bucket = perShift[part.shiftKey];
+      if (!bucket) return;
+
+      const category = getEntryCategory(entry);
+      const reason = getEntryReason(entry);
+      const planned = isPlannedCategory(category);
+
+      bucket.allActual += part.durationMin;
+
+      if (planned) {
+        bucket.planned += part.durationMin;
+      } else {
+        bucket.manualUnplanned += part.durationMin;
+        bucket.unplannedMerged += part.durationMin;
+        addToMap(bucket.categoriesManual, category, part.durationMin);
+        addToMap(bucket.categoriesUnplannedMerged, category, part.durationMin);
+        addToMap(bucket.reasonsUnplannedMerged, reason, part.durationMin);
+      }
+    });
+  });
+
+  const byShiftList = SHIFT_ORDER.map((key) => {
+    const row = perShift[key];
+    const shiftLengthMin = SHIFT_TOTAL_MIN;
+    const availableWorkMin = NET_WORK_MIN;
+    const plannedMin = Math.round(row.planned);
+    const unplannedMin = Math.round(row.unplannedMerged);
+    const operatingMin = Math.max(0, availableWorkMin - unplannedMin);
+
+    return {
+      shiftKey: key,
+      label: SHIFT_META[key].shortLabel,
+      shiftLengthMin,
+      availableWorkMin,
+      plannedMin,
+      systemUnplannedMin: Math.round(row.systemUnplanned),
+      manualUnplannedMin: Math.round(row.manualUnplanned),
+      unplannedMergedMin: unplannedMin,
+      operatingMin,
+      allActualMin: Math.round(row.allActual),
+      downtimePctOfNet: availableWorkMin > 0 ? Number(((unplannedMin / availableWorkMin) * 100).toFixed(1)) : 0,
+      categoriesSystem: mapToSortedList(row.categoriesSystem),
+      categoriesManual: mapToSortedList(row.categoriesManual),
+      categoriesUnplannedMerged: mapToSortedList(row.categoriesUnplannedMerged),
+      reasonsUnplannedMerged: mapToSortedList(row.reasonsUnplannedMerged),
+    };
+  });
+
+  const daily = byShiftList.reduce(
+    (acc, row) => {
+      acc.shiftLengthMin += row.shiftLengthMin;
+      acc.availableWorkMin += row.availableWorkMin;
+      acc.plannedMin += row.plannedMin;
+      acc.systemUnplannedMin += row.systemUnplannedMin;
+      acc.manualUnplannedMin += row.manualUnplannedMin;
+      acc.unplannedMergedMin += row.unplannedMergedMin;
+      acc.operatingMin += row.operatingMin;
+      acc.allActualMin += row.allActualMin;
+
+      row.categoriesSystem.forEach((item) => {
+        acc.categoriesSystem[item.label] = (acc.categoriesSystem[item.label] || 0) + item.value;
+      });
+      row.categoriesManual.forEach((item) => {
+        acc.categoriesManual[item.label] = (acc.categoriesManual[item.label] || 0) + item.value;
+      });
+      row.categoriesUnplannedMerged.forEach((item) => {
+        acc.categoriesUnplannedMerged[item.label] = (acc.categoriesUnplannedMerged[item.label] || 0) + item.value;
+      });
+      row.reasonsUnplannedMerged.forEach((item) => {
+        acc.reasonsUnplannedMerged[item.label] = (acc.reasonsUnplannedMerged[item.label] || 0) + item.value;
+      });
+
+      return acc;
+    },
+    {
+      shiftLengthMin: 0,
+      availableWorkMin: 0,
+      plannedMin: 0,
+      systemUnplannedMin: 0,
+      manualUnplannedMin: 0,
+      unplannedMergedMin: 0,
+      operatingMin: 0,
+      allActualMin: 0,
+      categoriesSystem: {},
+      categoriesManual: {},
+      categoriesUnplannedMerged: {},
+      reasonsUnplannedMerged: {},
+    }
+  );
+
+  const varianceMin = Math.abs(daily.systemUnplannedMin - daily.manualUnplannedMin);
+
+  let reconciliationStatus = "balanced";
+  if (daily.systemUnplannedMin > 0 && daily.manualUnplannedMin === 0) reconciliationStatus = "system_only";
+  else if (daily.systemUnplannedMin === 0 && daily.manualUnplannedMin > 0) reconciliationStatus = "manual_only";
+  else if (varianceMin > toleranceMin) reconciliationStatus = "outside_tolerance";
+  else reconciliationStatus = "within_tolerance";
+
+  const latestSystem =
+    [...systemEntries].sort(
+      (a, b) =>
+        (toDateSafe(b?.endedAt || b?.startedAt)?.getTime() || 0) -
+        (toDateSafe(a?.endedAt || a?.startedAt)?.getTime() || 0)
+    )[0] || null;
+
+  const latestManual =
+    [...manualEntries].sort(
+      (a, b) =>
+        (toDateSafe(b?.endedAt || b?.startedAt)?.getTime() || 0) -
+        (toDateSafe(a?.endedAt || a?.startedAt)?.getTime() || 0)
+    )[0] || null;
+
+  return {
+    toleranceMin,
+    entries: {
+      system: systemEntries,
+      manual: manualEntries,
+    },
+    byShiftList,
+    daily: {
+      shiftLengthMin: Math.round(daily.shiftLengthMin),
+      availableWorkMin: Math.round(daily.availableWorkMin),
+      plannedMin: Math.round(daily.plannedMin),
+      systemUnplannedMin: Math.round(daily.systemUnplannedMin),
+      manualUnplannedMin: Math.round(daily.manualUnplannedMin),
+      unplannedMergedMin: Math.round(daily.unplannedMergedMin),
+      operatingMin: Math.round(daily.operatingMin),
+      allActualMin: Math.round(daily.allActualMin),
+      downtimePctOfNet:
+        daily.availableWorkMin > 0 ? Number(((daily.unplannedMergedMin / daily.availableWorkMin) * 100).toFixed(1)) : 0,
+      categoriesSystem: mapToSortedList(daily.categoriesSystem),
+      categoriesManual: mapToSortedList(daily.categoriesManual),
+      categoriesUnplannedMerged: mapToSortedList(daily.categoriesUnplannedMerged),
+      reasonsUnplannedMerged: mapToSortedList(daily.reasonsUnplannedMerged),
+    },
+    reconciliation: {
+      systemUnplannedMin: Math.round(daily.systemUnplannedMin),
+      manualUnplannedMin: Math.round(daily.manualUnplannedMin),
+      unplannedMergedMin: Math.round(daily.unplannedMergedMin),
+      varianceMin: Math.round(varianceMin),
+      toleranceMin,
+      reconciliationStatus,
+      hasManualAdjustment: manualEntries.length > 0,
+      withinTolerance: varianceMin <= toleranceMin,
+      lastSystemEntry: latestSystem,
+      lastManualEntry: latestManual,
+    },
+  };
+}
+
+function buildMixByField(list, field, limit = 8) {
+  const map = {};
+  (list || []).forEach((item) => {
+    const key = item?.[field] || "—";
+    map[key] = (map[key] || 0) + 1;
+  });
+
+  return Object.entries(map)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+}
+
+function buildUnitComparisonRows(list) {
+  const map = {};
+  (list || []).forEach((item) => {
+    const unitId = item?.unitId || "UNKNOWN";
+    if (!map[unitId]) {
+      map[unitId] = {
+        id: unitId,
+        label: item?.unitName || unitId,
+        count: 0,
+        activeCount: 0,
+        totalMinutes: 0,
+      };
+    }
+    map[unitId].count += 1;
+    map[unitId].totalMinutes += Math.round(Number(item?.durationMs || 0) / 60000);
+    if (item.status === "ACTIVE") map[unitId].activeCount += 1;
+  });
+
+  return Object.values(map)
+    .sort((a, b) => b.totalMinutes - a.totalMinutes)
+    .slice(0, 12)
+    .map((row) => ({
+      ...row,
+      shortLabel: compactLabel(row.label, 13),
+    }));
+}
+
+function buildHourlyTrend(sessionHistory) {
+  const buckets = Array.from({ length: 12 }, (_, idx) => {
+    const end = Date.now() - (11 - idx) * 60 * 60 * 1000;
+    const labelDate = new Date(end);
+    const hh = String(labelDate.getHours()).padStart(2, "0");
+    return {
+      label: `${hh}:00`,
+      start: end,
+      end: end + 60 * 60 * 1000,
+      value: 0,
+    };
+  });
+
+  (sessionHistory || []).forEach((item) => {
+    const ts = item?.startISO ? Date.parse(item.startISO) : NaN;
+    if (!Number.isFinite(ts)) return;
+    const bucket = buckets.find((b) => ts >= b.start && ts < b.end);
+    if (bucket) bucket.value += 1;
+  });
+
+  return buckets.map((item) => ({ label: item.label, value: item.value }));
+}
+
+function buildSessionAnalytics(sessionHistory, activeDowntimeMap, liveLog) {
+  const rows = (sessionHistory || []).filter((n) => n.kind === "DOWNTIME");
+  const active = rows.filter((n) => n.status === "ACTIVE");
+  const closed = rows.filter((n) => n.status === "CLOSED");
+  const byCategory = buildMixByField(rows, "category", 8);
+  const byUnit = buildUnitComparisonRows(rows);
+  const hourlyTrend = buildHourlyTrend(rows);
+
+  const avgMin = closed.length
+    ? closed.reduce((sum, item) => sum + Number(item.durationMs || 0), 0) / closed.length / 60000
+    : 0;
+
+  const topActive = [...active].sort((a, b) => Number(b.durationMs || 0) - Number(a.durationMs || 0))[0] || null;
+  const latestLive = liveLog?.[0] || null;
+
+  return {
+    total: rows.length,
+    active: active.length || Object.keys(activeDowntimeMap || {}).length,
+    closed: closed.length,
+    avgMin,
+    byCategory,
+    byUnit,
+    hourlyTrend,
+    topActive,
+    latestLive,
+  };
+}
+
+function statusColor(status) {
+  if (status === "RUNNING") return PAGE.success;
+  if (status === "ATTN") return PAGE.warn;
+  return PAGE.danger;
+}
+
+function SectionGrid({ children, min = 320, gap = 12 }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`,
+        gap,
+        alignItems: "start",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Card({ title, subtitle, children, right, tone = "default" }) {
+  const toneMap = {
+    default: {
+      border: PAGE.border,
+      bg: PAGE.panel,
+      header: "rgba(255,255,255,0.02)",
+    },
+    accent: {
+      border: "rgba(56,189,248,0.18)",
+      bg: "rgba(56,189,248,0.05)",
+      header: "rgba(56,189,248,0.08)",
+    },
+    success: {
+      border: "rgba(34,197,94,0.18)",
+      bg: "rgba(34,197,94,0.05)",
+      header: "rgba(34,197,94,0.08)",
+    },
+    warn: {
+      border: "rgba(245,158,11,0.18)",
+      bg: "rgba(245,158,11,0.05)",
+      header: "rgba(245,158,11,0.08)",
+    },
+    danger: {
+      border: "rgba(239,68,68,0.18)",
+      bg: "rgba(239,68,68,0.05)",
+      header: "rgba(239,68,68,0.08)",
+    },
+    purple: {
+      border: "rgba(168,85,247,0.18)",
+      bg: "rgba(168,85,247,0.05)",
+      header: "rgba(168,85,247,0.08)",
+    },
+  };
+
+  const skin = toneMap[tone] || toneMap.default;
 
   return (
-    <Box>
-      <Box
-        sx={{
-          position: "relative",
-          height: 42,
-          borderRadius: 2,
-          border: `1px solid ${PAGE.borderSoft}`,
-          bgcolor: "rgba(0,0,0,0.18)",
-          overflow: "hidden",
+    <div
+      style={{
+        minWidth: 0,
+        width: "100%",
+        border: `1px solid ${skin.border}`,
+        background: skin.bg,
+        borderRadius: 18,
+        overflow: "hidden",
+        height: "100%",
+      }}
+    >
+      <div
+        style={{
+          padding: "13px 15px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          borderBottom: `1px solid ${PAGE.border}`,
+          background: skin.header,
         }}
       >
-        {shiftBands.map((b) => (
-          <Box
-            key={b.key}
-            sx={{
-              position: "absolute",
-              left: `${b.leftPct}%`,
-              width: `${b.widthPct}%`,
-              top: 0,
-              bottom: 0,
-              bgcolor: "rgba(255,255,255,0.035)",
-              borderRight: "1px solid rgba(255,255,255,0.06)",
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              color: PAGE.text,
+              fontWeight: 900,
+              lineHeight: 1.2,
+              whiteSpace: "normal",
+              overflowWrap: "break-word",
             }}
           >
-            <Box sx={{ px: 1, py: 0.7, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Typography sx={{ color: "rgba(255,255,255,0.78)", fontSize: 11, fontWeight: 900, letterSpacing: 0.6 }}>
-                {b.key}
-              </Typography>
-              <Typography sx={{ color: PAGE.muted, fontSize: 11, whiteSpace: "nowrap" }}>
-                {b.startLabel}-{b.endLabel}
-              </Typography>
-            </Box>
-          </Box>
-        ))}
+            {title}
+          </div>
+          {subtitle ? (
+            <div
+              style={{
+                color: PAGE.subtext,
+                fontSize: 12,
+                marginTop: 4,
+                lineHeight: 1.35,
+                whiteSpace: "normal",
+                overflowWrap: "break-word",
+              }}
+            >
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
+        {right ? (
+          <div
+            style={{
+              minWidth: 0,
+              maxWidth: "100%",
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              gap: 8,
+            }}
+          >
+            {right}
+          </div>
+        ) : null}
+      </div>
 
-        {ticks.map((m) => (
-          <Box
-            key={m}
-            sx={{
-              position: "absolute",
-              left: `${(m / 1440) * 100}%`,
-              top: 0,
-              bottom: 0,
-              width: 1,
-              bgcolor: "rgba(255,255,255,0.06)",
+      <div style={{ padding: 14, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, subvalue, tone = "default" }) {
+  const toneMap = {
+    default: {
+      border: PAGE.border,
+      bg: "rgba(255,255,255,0.03)",
+    },
+    accent: {
+      border: "rgba(56,189,248,0.28)",
+      bg: "rgba(56,189,248,0.08)",
+    },
+    success: {
+      border: "rgba(34,197,94,0.28)",
+      bg: "rgba(34,197,94,0.08)",
+    },
+    warn: {
+      border: "rgba(245,158,11,0.28)",
+      bg: "rgba(245,158,11,0.08)",
+    },
+    danger: {
+      border: "rgba(239,68,68,0.28)",
+      bg: "rgba(239,68,68,0.08)",
+    },
+    purple: {
+      border: "rgba(168,85,247,0.28)",
+      bg: "rgba(168,85,247,0.08)",
+    },
+    info: {
+      border: "rgba(56,189,248,0.28)",
+      bg: "rgba(56,189,248,0.08)",
+    },
+  };
+
+  const skin = toneMap[tone] || toneMap.default;
+
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        border: `1px solid ${skin.border}`,
+        background: skin.bg,
+        borderRadius: 16,
+        padding: "12px 14px",
+        height: "100%",
+      }}
+    >
+      <div style={{ color: PAGE.subtext, fontSize: 12, lineHeight: 1.3 }}>{label}</div>
+      <div
+        style={{
+          color: PAGE.text,
+          fontWeight: 900,
+          fontSize: 20,
+          lineHeight: 1.2,
+          marginTop: 6,
+          whiteSpace: "normal",
+          overflowWrap: "break-word",
+        }}
+      >
+        {value}
+      </div>
+      {subvalue ? (
+        <div style={{ color: PAGE.subtext, fontSize: 12, marginTop: 6, lineHeight: 1.35 }}>{subvalue}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function InfoLine({ label, value }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(110px, 140px) minmax(0, 1fr)",
+        gap: 10,
+        alignItems: "start",
+      }}
+    >
+      <div style={{ color: PAGE.subtext, fontSize: 12 }}>{label}</div>
+      <div
+        style={{
+          color: PAGE.text,
+          fontWeight: 800,
+          lineHeight: 1.4,
+          whiteSpace: "normal",
+          overflowWrap: "break-word",
+        }}
+      >
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
+function SortButton({ active, children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        height: 34,
+        padding: "0 12px",
+        borderRadius: 12,
+        border: `1px solid ${active ? "rgba(56,189,248,0.34)" : PAGE.border}`,
+        background: active ? "rgba(56,189,248,0.14)" : "rgba(255,255,255,0.04)",
+        color: PAGE.text,
+        fontWeight: 900,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LegendList({ items, suffix = "" }) {
+  return (
+    <div style={{ display: "grid", gap: 10, width: "100%", minWidth: 0 }}>
+      {(items || []).map((item, idx) => (
+        <div
+          key={`${item.label}-${idx}`}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "14px minmax(0, 1fr) auto",
+            gap: 10,
+            alignItems: "start",
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: 99,
+              background: COLORS[idx % COLORS.length],
+              display: "inline-block",
+              marginTop: 3,
             }}
           />
-        ))}
-      </Box>
+          <div
+            title={item.label}
+            style={{
+              color: PAGE.text,
+              fontWeight: 700,
+              minWidth: 0,
+              lineHeight: 1.35,
+              whiteSpace: "normal",
+              overflowWrap: "break-word",
+            }}
+          >
+            {item.label}
+          </div>
+          <div style={{ color: PAGE.subtext, fontWeight: 800, whiteSpace: "nowrap", paddingLeft: 4 }}>
+            {item.value}
+            {suffix}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-      <Box sx={{ mt: 1.1, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
-        <Typography sx={{ color: PAGE.muted, fontSize: 12 }}>Timeline reference: {day0.toLocaleDateString()}</Typography>
-        <Typography sx={{ color: PAGE.muted, fontSize: 12 }}>Blocks are downtime sessions clipped to today</Typography>
-      </Box>
+function HorizontalBarChart({ rows, valueKey = "value", unit = "", onRowClick }) {
+  const maxValue = Math.max(1, ...rows.map((r) => Number(r?.[valueKey] || 0)));
 
-      <Divider sx={{ my: 1.1, borderColor: PAGE.borderSoft }} />
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {rows.map((row, idx) => {
+        const value = Number(row?.[valueKey] || 0);
+        const width = `${(value / maxValue) * 100}%`;
 
-      <Stack spacing={1.1}>
-        {data.map((row) => (
-          <Box key={row.unitId} sx={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 1.2, alignItems: "center" }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ color: PAGE.text, fontWeight: 950, fontSize: 12 }} noWrap title={row.unitName}>
-                {row.unitName}
-              </Typography>
-              <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.2 }} noWrap>
-                DT: {formatMinutes(row.minutes)} • UnitId: {row.unitId}
-              </Typography>
-            </Box>
+        return (
+          <button
+            key={`${row.label}-${idx}`}
+            onClick={() => onRowClick?.(row)}
+            style={{
+              border: `1px solid ${PAGE.border}`,
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: 14,
+              padding: 10,
+              textAlign: "left",
+              cursor: onRowClick ? "pointer" : "default",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) auto",
+                gap: 10,
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  color: PAGE.text,
+                  fontWeight: 800,
+                  minWidth: 0,
+                  whiteSpace: "normal",
+                  overflowWrap: "break-word",
+                }}
+              >
+                {row.label}
+              </div>
+              <div style={{ color: PAGE.subtext, fontWeight: 800, whiteSpace: "nowrap" }}>
+                {value}
+                {unit}
+              </div>
+            </div>
 
-            <Box
-              sx={{
-                position: "relative",
-                height: 30,
-                borderRadius: 2,
-                border: "1px solid rgba(255,255,255,0.08)",
-                bgcolor: "rgba(0,0,0,0.18)",
+            <div
+              style={{
+                width: "100%",
+                height: 10,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.08)",
                 overflow: "hidden",
               }}
             >
-              {ticks.map((m) => (
-                <Box
-                  key={m}
-                  sx={{
-                    position: "absolute",
-                    left: `${(m / 1440) * 100}%`,
-                    top: 0,
-                    bottom: 0,
-                    width: 1,
-                    bgcolor: "rgba(255,255,255,0.05)",
-                  }}
-                />
-              ))}
-
-              {row.segments.map((s, idx) => {
-                const leftPct = (s.leftMin / 1440) * 100;
-                const widthPct = (s.wMin / 1440) * 100;
-
-                const bg = categoryColor(s.category);
-                const title = `${row.unitName}\n${s.full}\n${s.startLabel}-${s.endLabel} • ${formatMinutes(s.minutes)}`;
-
-                return (
-                  <Box
-                    key={`${row.unitId}-${idx}-${s.leftMin}`}
-                    title={title}
-                    sx={{
-                      position: "absolute",
-                      left: `${leftPct}%`,
-                      width: `${Math.max(0.4, widthPct)}%`,
-                      top: 4,
-                      bottom: 4,
-                      borderRadius: 1.5,
-                      bgcolor: bg,
-                      boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      opacity: 0.95,
-                    }}
-                  />
-                );
-              })}
-            </Box>
-          </Box>
-        ))}
-      </Stack>
-
-      <Divider sx={{ mt: 1.2, borderColor: PAGE.borderSoft }} />
-      <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 1 }}>Tip: Hover a block to see Category — Reason, time window and minutes.</Typography>
-    </Box>
+              <div
+                style={{
+                  width,
+                  minWidth: value > 0 ? 10 : 0,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: COLORS[idx % COLORS.length],
+                }}
+              />
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
-/* ------------------- 3D map ------------------- */
+function HalfDonutHourlyChart({ rows }) {
+  const size = 320;
+  const cx = size / 2;
+  const cy = size / 2 + 28;
+  const rOuter = 118;
+  const rInner = 72;
+  const total = rows.reduce((sum, row) => sum + Number(row.value || 0), 0);
+  const activeHours = rows.filter((row) => Number(row.value || 0) > 0).length;
+  const maxValue = Math.max(1, ...rows.map((row) => Number(row.value || 0)));
+
+  function polarToCartesian(radius, angleDeg) {
+    const angle = (Math.PI / 180) * angleDeg;
+    return {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  }
+
+  function arcPath(startDeg, endDeg) {
+    const startOuter = polarToCartesian(rOuter, startDeg);
+    const endOuter = polarToCartesian(rOuter, endDeg);
+    const startInner = polarToCartesian(rInner, endDeg);
+    const endInner = polarToCartesian(rInner, startDeg);
+    const largeArcFlag = endDeg - startDeg > 180 ? 1 : 0;
+
+    return [
+      `M ${startOuter.x} ${startOuter.y}`,
+      `A ${rOuter} ${rOuter} 0 ${largeArcFlag} 1 ${endOuter.x} ${endOuter.y}`,
+      `L ${startInner.x} ${startInner.y}`,
+      `A ${rInner} ${rInner} 0 ${largeArcFlag} 0 ${endInner.x} ${endInner.y}`,
+      "Z",
+    ].join(" ");
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 12, justifyItems: "center" }}>
+      <svg width="100%" viewBox={`0 0 ${size} ${size}`} style={{ maxWidth: 360, overflow: "visible" }}>
+        {rows.map((row, idx) => {
+          const segmentStart = 180 + idx * (180 / rows.length);
+          const segmentEnd = 180 + (idx + 1) * (180 / rows.length);
+          const value = Number(row.value || 0);
+          const intensity = value / maxValue;
+          const fill = value > 0 ? COLORS[idx % COLORS.length] : "rgba(255,255,255,0.08)";
+          const labelAngle = (segmentStart + segmentEnd) / 2;
+          const labelPoint = polarToCartesian(rOuter + 20, labelAngle);
+          const countPoint = polarToCartesian((rOuter + rInner) / 2, labelAngle);
+
+          return (
+            <g key={`${row.label}-${idx}`}>
+              <path
+                d={arcPath(segmentStart + 0.8, segmentEnd - 0.8)}
+                fill={fill}
+                fillOpacity={value > 0 ? 0.35 + intensity * 0.45 : 1}
+                stroke={fill}
+                strokeOpacity={value > 0 ? 0.85 : 0.2}
+                strokeWidth="1"
+              />
+              <text x={countPoint.x} y={countPoint.y + 4} textAnchor="middle" fontSize="12" fontWeight="900" fill="#ffffff">
+                {value}
+              </text>
+              <text x={labelPoint.x} y={labelPoint.y} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.72)">
+                {row.label.slice(0, 2)}
+              </text>
+            </g>
+          );
+        })}
+
+        <text x={cx} y={cy - 28} textAnchor="middle" fontSize="12" fill="rgba(255,255,255,0.65)">
+          Hourly Starts
+        </text>
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="26" fontWeight="900" fill="#ffffff">
+          {total}
+        </text>
+        <text x={cx} y={cy + 20} textAnchor="middle" fontSize="12" fill="rgba(255,255,255,0.65)">
+          {activeHours} active hours
+        </text>
+      </svg>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gap: 10,
+          width: "100%",
+        }}
+      >
+        <KpiCard label="12h Total" value={formatNumber(total)} tone="warn" />
+        <KpiCard label="Peak Hour" value={formatNumber(maxValue)} tone="accent" />
+      </div>
+    </div>
+  );
+}
+
+function ShiftLossCompare({ rows }) {
+  const maxValue = Math.max(
+    1,
+    ...rows.flatMap((row) => [
+      Number(row.systemUnplannedMin || 0),
+      Number(row.manualUnplannedMin || 0),
+      Number(row.unplannedMergedMin || 0),
+      Number(row.operatingMin || 0),
+    ])
+  );
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {rows.map((row) => {
+        const series = [
+          { label: "System", value: row.systemUnplannedMin, color: PAGE.info },
+          { label: "Manual", value: row.manualUnplannedMin, color: PAGE.purple },
+          { label: "Total", value: row.unplannedMergedMin, color: PAGE.warn },
+          { label: "Running", value: row.operatingMin, color: PAGE.success },
+        ];
+
+        return (
+          <div
+            key={row.shiftKey}
+            style={{
+              border: `1px solid ${PAGE.border}`,
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: 14,
+              padding: 12,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ color: PAGE.text, fontWeight: 900 }}>
+                {SHIFT_META[row.shiftKey]?.label || row.shiftKey}
+              </div>
+              <div style={{ color: PAGE.subtext, fontSize: 12 }}>
+                {formatPercent(row.downtimePctOfNet)} of {NET_WORK_MIN} min net
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {series.map((item) => (
+                <div
+                  key={`${row.shiftKey}-${item.label}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "72px minmax(0, 1fr) auto",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ color: PAGE.subtext, fontSize: 12 }}>{item.label}</div>
+                  <div
+                    style={{
+                      height: 10,
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.08)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${(Number(item.value || 0) / maxValue) * 100}%`,
+                        height: "100%",
+                        background: item.color,
+                      }}
+                    />
+                  </div>
+                  <div style={{ color: PAGE.text, fontWeight: 900, fontSize: 12, whiteSpace: "nowrap" }}>
+                    {item.value} min
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActiveDowntimeBoard({ rows, onFocus, onResume }) {
+  if (!rows.length) {
+    return <Typography sx={{ color: PAGE.subtext }}>No active downtime sessions right now.</Typography>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          style={{
+            border: `1px solid ${PAGE.border}`,
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: 16,
+            padding: 12,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) auto",
+              gap: 10,
+              alignItems: "start",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: PAGE.text, fontWeight: 900, lineHeight: 1.3, whiteSpace: "normal", overflowWrap: "break-word" }}>
+                {row.unitName}
+              </div>
+              <div style={{ color: PAGE.subtext, fontSize: 12, marginTop: 4 }}>
+                {row.stationName ? `Station ${row.stationName}` : "Unit Level"}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Chip size="small" label={row.category || "Downtime"} variant="outlined" color="warning" />
+              <Chip size="small" label={row.severity || "LOW"} variant="outlined" color={severityChipColor(row.severity)} />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Reason</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.reason || "—"}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Started</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{formatTs(row.startISO)}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Active Time</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.durationLabel}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Shift</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.shiftKey ? `Shift ${row.shiftKey}` : "—"}</div>
+            </div>
+          </div>
+
+          {row.text ? (
+            <div
+              style={{
+                border: `1px solid ${PAGE.borderSoft}`,
+                background: "rgba(255,255,255,0.02)",
+                borderRadius: 12,
+                padding: 10,
+                color: PAGE.subtext,
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              {row.text}
+            </div>
+          ) : null}
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Button variant="outlined" onClick={() => onFocus?.(row.unitId)}>
+              Focus Unit
+            </Button>
+            <Button variant="outlined" color="warning" startIcon={<PlayCircleRoundedIcon />} onClick={() => onResume?.(row.unitId)}>
+              Resume
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SessionHistory({
+  sessionHistory,
+  filteredHistory,
+  search,
+  setSearch,
+  sevFilter,
+  setSevFilter,
+  catFilter,
+  setCatFilter,
+  onClear,
+  onResetFilters,
+  onClickItem,
+  mobileSizing,
+}) {
+  return (
+    <Box sx={{ width: "100%", minWidth: 0 }}>
+      <Stack spacing={1.1} sx={{ width: "100%" }}>
+        <TextField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search unit / station / reason / category"
+          fullWidth
+          size={mobileSizing ? "medium" : "small"}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchRoundedIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            "& .MuiInputBase-root": {
+              bgcolor: "rgba(255,255,255,0.03)",
+              borderRadius: 2,
+            },
+          }}
+        />
+
+        <Stack direction={mobileSizing ? "column" : "row"} spacing={1}>
+          <FormControl size={mobileSizing ? "medium" : "small"} sx={{ flex: 1 }}>
+            <Select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
+              <MenuItem value="ALL">All Severities</MenuItem>
+              <MenuItem value={SEVERITY.HIGH}>HIGH</MenuItem>
+              <MenuItem value={SEVERITY.MED}>MED</MenuItem>
+              <MenuItem value={SEVERITY.LOW}>LOW</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size={mobileSizing ? "medium" : "small"} sx={{ flex: 1 }}>
+            <Select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
+              <MenuItem value="ALL">All Categories</MenuItem>
+              {["Maintenance", "Break", "Process"].map((item) => (
+                <MenuItem key={item} value={item}>
+                  {item}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
+
+        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+          <Button variant="outlined" onClick={onResetFilters} startIcon={<RestartAltRoundedIcon />}>
+            Reset
+          </Button>
+          <Button variant="outlined" color="warning" onClick={onClear}>
+            Clear Live History
+          </Button>
+        </Stack>
+      </Stack>
+
+      <Divider sx={{ my: 1.4, borderColor: PAGE.borderSoft }} />
+
+      {filteredHistory.length === 0 ? (
+        <Typography sx={{ color: PAGE.subtext, fontSize: mobileSizing ? 14 : 13 }}>
+          {sessionHistory.length === 0 ? "No downtime sessions in the last 24 hours." : "No results for current filters."}
+        </Typography>
+      ) : (
+        <Stack spacing={1.2}>
+          {filteredHistory.map((n) => (
+            <Paper
+              key={n.id}
+              elevation={0}
+              onClick={() => onClickItem(n)}
+              sx={{
+                p: mobileSizing ? 1.4 : 1.2,
+                borderRadius: 3,
+                cursor: "pointer",
+                bgcolor: "rgba(255,255,255,0.03)",
+                border: `1px solid ${PAGE.borderSoft}`,
+                transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease",
+                "&:hover": {
+                  transform: "translateY(-1px)",
+                  bgcolor: "rgba(255,255,255,0.045)",
+                  borderColor: "rgba(255,255,255,0.12)",
+                },
+              }}
+            >
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      sx={{
+                        color: PAGE.text,
+                        fontWeight: 900,
+                        fontSize: mobileSizing ? 15 : 13,
+                        lineHeight: 1.3,
+                        whiteSpace: "normal",
+                        overflowWrap: "break-word",
+                      }}
+                    >
+                      {n.unitName || "—"}
+                    </Typography>
+                    <Typography sx={{ color: PAGE.subtext, fontSize: mobileSizing ? 13 : 12, lineHeight: 1.35 }}>
+                      Downtime Session
+                    </Typography>
+                  </Box>
+
+                  <Stack direction="row" spacing={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    <Chip
+                      size="small"
+                      label={n.status === "ACTIVE" ? "ACTIVE" : "CLOSED"}
+                      color={n.status === "ACTIVE" ? "warning" : "default"}
+                      variant="outlined"
+                    />
+                    <Chip size="small" label={n.severity || "—"} color={severityChipColor(n.severity)} variant="outlined" />
+                  </Stack>
+                </Stack>
+
+                <Stack direction="row" spacing={0.8} sx={{ flexWrap: "wrap" }}>
+                  {n.category ? <Chip size="small" label={n.category} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                  {n.reason ? <Chip size="small" label={n.reason} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                  {n.shiftKey ? <Chip size="small" label={`Shift ${n.shiftKey}`} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                </Stack>
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: mobileSizing ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                    gap: 1,
+                  }}
+                >
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Start</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{formatTs(n.startISO)}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>End</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{n.endISO ? formatTs(n.endISO) : "Still active"}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Duration</Typography>
+                    <Typography sx={{ color: PAGE.text, fontWeight: 800, fontSize: 12 }}>{n.durationLabel}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Business Day</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{n.businessDate || "—"}</Typography>
+                  </Box>
+                </Box>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
+      )}
+    </Box>
+  );
+}
 
 function LabelTag3D({ text, dotColor, active, unitSize, zoomDist }) {
   const groupRef = useRef(null);
 
   const name = String(text || "UNIT");
   const mode = active ? "full" : "tiny";
-  const shown = mode === "tiny" ? name.slice(0, 14) : name;
+  const shown = mode === "tiny" ? name.slice(0, 12) : name;
 
   const baseFont = mode === "tiny" ? 0.22 : 0.28;
-  const charW = mode === "tiny" ? 0.13 : 0.155;
-  const padX = mode === "tiny" ? 0.3 : 0.42;
+  const charW = mode === "tiny" ? 0.14 : 0.16;
+  const padX = mode === "tiny" ? 0.3 : 0.4;
   const padY = mode === "tiny" ? 0.18 : 0.22;
 
-  const textW = clamp(shown.length * charW, 1.1, mode === "tiny" ? 3.1 : 6.2);
+  const textW = clamp(shown.length * charW, 1.05, mode === "tiny" ? 2.6 : 5.2);
   const tagW = textW + padX;
   const tagH = baseFont + padY;
 
@@ -1250,7 +1720,7 @@ function LabelTag3D({ text, dotColor, active, unitSize, zoomDist }) {
 
         <mesh position={[0, 0, 0.001]} renderOrder={21}>
           <planeGeometry args={[tagW * 1.02, tagH * 1.1]} />
-          <meshStandardMaterial color="#ffffff" transparent opacity={opacity * 0.09} depthTest={false} />
+          <meshStandardMaterial color="#ffffff" transparent opacity={opacity * 0.1} depthTest={false} />
         </mesh>
 
         <mesh position={[-tagW / 2 + 0.18, 0, 0.002]} renderOrder={22}>
@@ -1278,7 +1748,7 @@ function LabelTag3D({ text, dotColor, active, unitSize, zoomDist }) {
   );
 }
 
-function AlarmRing({ w, h, enabled }) {
+function DowntimePulse({ w, h, enabled }) {
   const ringRef = useRef(null);
 
   useFrame((state) => {
@@ -1287,33 +1757,31 @@ function AlarmRing({ w, h, enabled }) {
       ringRef.current.visible = false;
       return;
     }
+
     ringRef.current.visible = true;
     const t = state.clock.getElapsedTime();
-    const k = 0.88 + (Math.sin(t * 3.1) * 0.5 + 0.5) * 0.22;
+    const k = 0.88 + (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.22;
     ringRef.current.scale.set(k, 1, k);
-    ringRef.current.position.y = 0.09 + (Math.sin(t * 2.4) * 0.5 + 0.5) * 0.02;
+    ringRef.current.position.y = 0.08 + (Math.sin(t * 2.1) * 0.5 + 0.5) * 0.02;
   });
 
   return (
     <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[Math.max(w, h) * 0.6, Math.max(w, h) * 0.76, 48]} />
-      <meshStandardMaterial color={COLOR_YELLOW} transparent opacity={0.26} emissive={COLOR_YELLOW} emissiveIntensity={0.32} />
+      <ringGeometry args={[Math.max(w, h) * 0.58, Math.max(w, h) * 0.72, 48]} />
+      <meshStandardMaterial color={PAGE.warn} transparent opacity={0.34} emissive={PAGE.warn} emissiveIntensity={0.4} />
     </mesh>
   );
 }
 
-function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomDist, isAlarmActive }) {
+function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomDist, isDowntimeHeld }) {
   const { x, y, w, h } = unit.layout;
-
   const height = 0.12;
   const borderUp = isSelected ? 0.03 : 0;
 
-  const baseColor = baseLineColor(unit.status);
-  const topColor = isAlarmActive ? COLOR_YELLOW : baseColor;
-
+  const baseColor = statusColor(unit.status);
+  const topColor = isDowntimeHeld ? PAGE.warn : baseColor;
   const unitSize = Math.max(w, h);
-  const active = isSelected || isHovered || isAlarmActive;
-
+  const active = isSelected || isHovered || isDowntimeHeld;
   const lift = clamp(0.38 + unitSize * 0.07, 0.48, 0.95);
 
   return (
@@ -1337,17 +1805,17 @@ function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomD
           color={isSelected ? "#1f2937" : "#111827"}
           transparent
           opacity={0.96}
-          emissive={isAlarmActive ? COLOR_YELLOW : isHovered ? "#0ea5e9" : "#000000"}
-          emissiveIntensity={isAlarmActive ? 0.16 : isHovered ? 0.14 : 0}
+          emissive={isDowntimeHeld ? PAGE.warn : isHovered ? "#0ea5e9" : "#000000"}
+          emissiveIntensity={isDowntimeHeld ? 0.22 : isHovered ? 0.18 : 0}
         />
       </mesh>
 
       <mesh position={[0, (height + borderUp) / 2 + 0.01, 0]}>
         <boxGeometry args={[w * 0.96, 0.02, h * 0.96]} />
-        <meshStandardMaterial color={topColor} transparent opacity={0.92} />
+        <meshStandardMaterial color={topColor} transparent opacity={0.94} />
       </mesh>
 
-      <AlarmRing w={w} h={h} enabled={!!isAlarmActive} />
+      <DowntimePulse w={w} h={h} enabled={!!isDowntimeHeld} />
 
       <group position={[0, lift, 0]}>
         <LabelTag3D text={unit.name} dotColor={topColor} active={active} unitSize={unitSize} zoomDist={zoomDist} />
@@ -1356,14 +1824,15 @@ function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomD
   );
 }
 
-function StableControls({ target, isMobile }) {
+function StableControls({ target, isMobile, onControlsReady }) {
   const controlsRef = useRef(null);
 
   useEffect(() => {
     if (!controlsRef.current) return;
     controlsRef.current.target.set(target[0], target[1], target[2]);
     controlsRef.current.update();
-  }, [target]);
+    onControlsReady?.(controlsRef.current);
+  }, [target, onControlsReady]);
 
   return (
     <OrbitControls
@@ -1383,28 +1852,107 @@ function StableControls({ target, isMobile }) {
   );
 }
 
-function CadScene({ units, selectedId, hoveredId, onHoverChange, onSelect, bounds, isMobile, onZoomUpdate, activeAlarmMap }) {
+function CadScene({
+  units,
+  selectedId,
+  hoveredId,
+  onHoverChange,
+  onSelect,
+  bounds,
+  isMobile,
+  onZoomUpdate,
+  activeDowntimeMap,
+  focusUnitId,
+  onFocusDone,
+}) {
   const target0 = useMemo(() => [bounds.cx, 0, bounds.cy], [bounds.cx, bounds.cy]);
   const { camera } = useThree();
 
+  const controlsRef = useRef(null);
   const zoomDistRef = useRef(18);
   const lastSentRef = useRef(0);
 
-  useFrame(() => {
+  const focusAnimRef = useRef({
+    active: false,
+    t: 0,
+    dur: 0.65,
+    fromTarget: [0, 0, 0],
+    toTarget: [0, 0, 0],
+    fromCam: [0, 0, 0],
+    toCam: [0, 0, 0],
+  });
+
+  const onControlsReady = useCallback((c) => {
+    controlsRef.current = c;
+  }, []);
+
+  const easeInOut = (x) => {
+    const t = clamp(x, 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+
+  useEffect(() => {
+    if (!focusUnitId || !controlsRef.current) return;
+    const u = units.find((x) => x.id === focusUnitId);
+    if (!u) return;
+
+    const tx = u.layout.x + u.layout.w / 2;
+    const tz = u.layout.y + u.layout.h / 2;
+
+    const c = controlsRef.current;
+    const curT = [c.target.x, c.target.y, c.target.z];
+    const curC = [camera.position.x, camera.position.y, camera.position.z];
+
+    focusAnimRef.current = {
+      active: true,
+      t: 0,
+      dur: 0.65,
+      fromTarget: curT,
+      toTarget: [tx, 0, tz],
+      fromCam: curC,
+      toCam: [tx, curC[1], tz + 14],
+    };
+  }, [camera.position.x, camera.position.y, camera.position.z, focusUnitId, units]);
+
+  useFrame((state, delta) => {
     const dx = camera.position.x - target0[0];
     const dy = camera.position.y - target0[1];
     const dz = camera.position.z - target0[2];
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     zoomDistRef.current = dist;
 
-    const nowPerf = performance.now();
-    if (nowPerf - lastSentRef.current > 140) {
-      lastSentRef.current = nowPerf;
+    const now = performance.now();
+    if (now - lastSentRef.current > 120) {
+      lastSentRef.current = now;
       onZoomUpdate(dist);
     }
-  });
 
-  const zoomDist = zoomDistRef.current;
+    const anim = focusAnimRef.current;
+    if (anim.active && controlsRef.current) {
+      anim.t += delta;
+      const k = easeInOut(anim.t / anim.dur);
+      const lerp = (a, b) => a + (b - a) * k;
+
+      controlsRef.current.target.set(
+        lerp(anim.fromTarget[0], anim.toTarget[0]),
+        lerp(anim.fromTarget[1], anim.toTarget[1]),
+        lerp(anim.fromTarget[2], anim.toTarget[2])
+      );
+
+      camera.position.set(
+        lerp(anim.fromCam[0], anim.toCam[0]),
+        lerp(anim.fromCam[1], anim.toCam[1]),
+        lerp(anim.fromCam[2], anim.toCam[2])
+      );
+
+      controlsRef.current.update();
+
+      if (anim.t >= anim.dur) {
+        anim.active = false;
+        onFocusDone?.();
+      }
+    }
+  });
 
   return (
     <>
@@ -1431,17 +1979,29 @@ function CadScene({ units, selectedId, hoveredId, onHoverChange, onSelect, bound
           isHovered={u.id === hoveredId}
           onSelect={onSelect}
           onHoverChange={onHoverChange}
-          zoomDist={zoomDist}
-          isAlarmActive={!!activeAlarmMap[u.id]}
+          zoomDist={zoomDistRef.current}
+          isDowntimeHeld={!!activeDowntimeMap[u.id]}
         />
       ))}
 
-      <StableControls target={target0} isMobile={isMobile} />
+      <StableControls target={target0} isMobile={isMobile} onControlsReady={onControlsReady} />
     </>
   );
 }
 
-function CadView({ units, selectedId, hoveredId, onHoverChange, onSelect, heightPx, isMobile, onZoomUpdate, activeAlarmMap }) {
+function CadView({
+  units,
+  selectedId,
+  hoveredId,
+  onHoverChange,
+  onSelect,
+  heightPx,
+  isMobile,
+  onZoomUpdate,
+  activeDowntimeMap,
+  focusUnitId,
+  onFocusDone,
+}) {
   const bounds = useMemo(() => {
     let minX = Infinity;
     let minY = Infinity;
@@ -1463,7 +2023,6 @@ function CadView({ units, selectedId, hoveredId, onHoverChange, onSelect, height
   }, [units]);
 
   const headerH = 56;
-  const canvasInnerGutter = 10;
 
   return (
     <Box
@@ -1491,23 +2050,23 @@ function CadView({ units, selectedId, hoveredId, onHoverChange, onSelect, height
       >
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontWeight: 900, color: PAGE.text, lineHeight: 1.1 }} noWrap>
-            Plant 3 — Alarm Downtime Map
+            Plant 3 — Downtime Center
           </Typography>
           <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap>
-            Yellow ring = active downtime/alarm (persisted memory)
+            Shift-aligned downtime logic
           </Typography>
         </Box>
 
         <Typography sx={{ color: PAGE.subtext, fontSize: 12, whiteSpace: "nowrap" }}>Pan / Zoom / Rotate</Typography>
       </Box>
 
-      <Box sx={{ height: `calc(100% - ${headerH}px)`, p: `${canvasInnerGutter}px`, boxSizing: "border-box", minHeight: 0 }}>
+      <Box sx={{ height: `calc(100% - ${headerH}px)`, p: 1.2, boxSizing: "border-box", minHeight: 0 }}>
         <Box
           sx={{
             borderRadius: 2,
             overflow: "hidden",
             height: "100%",
-            border: "1px solid rgba(255,255,255,0.06)",
+            border: `1px solid rgba(255,255,255,0.06)`,
             bgcolor: "rgba(0,0,0,0.18)",
           }}
         >
@@ -1526,7 +2085,9 @@ function CadView({ units, selectedId, hoveredId, onHoverChange, onSelect, height
               bounds={bounds}
               isMobile={isMobile}
               onZoomUpdate={onZoomUpdate}
-              activeAlarmMap={activeAlarmMap}
+              activeDowntimeMap={activeDowntimeMap}
+              focusUnitId={focusUnitId}
+              onFocusDone={onFocusDone}
             />
           </Canvas>
         </Box>
@@ -1534,8 +2095,6 @@ function CadView({ units, selectedId, hoveredId, onHoverChange, onSelect, height
     </Box>
   );
 }
-
-/* ------------------- Page ------------------- */
 
 export default function DowntimePage() {
   const rawUnits = useMemo(() => getPlant3Units(), []);
@@ -1566,133 +2125,234 @@ export default function DowntimePage() {
     });
   }, [rawUnits]);
 
-  const unitsById = useMemo(() => {
-    const m = new Map();
-    units.forEach((u) => m.set(u.id, u));
-    return m;
-  }, [units]);
-
   const isMobile = useMediaQuery("(max-width: 900px)");
-  const isTablet = useMediaQuery("(min-width: 900px) and (max-width: 1199px)");
+  const isTablet = useMediaQuery("(min-width: 901px) and (max-width: 1279px)");
 
-  const pad = isMobile ? 12 : isTablet ? 14 : 18;
-  const framePad = isMobile ? 10 : isTablet ? 12 : 14;
-  const canvasH = isMobile ? 520 : isTablet ? 640 : 680;
-  const gridCols = isTablet || isMobile ? "1fr" : "1.18fr 0.82fr";
-
-  const { log, startEngine, pushAlarm } = useAlarmCenter();
+  const { unread, log, pushAlarm, clearAll, startEngine } = useAlarmCenter();
 
   useEffect(() => {
     startEngine?.();
   }, [startEngine]);
 
-  const [selectedId, setSelectedId] = useState("ALL");
+  const [selectedId, setSelectedId] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
   const [zoomDist, setZoomDist] = useState(null);
+  const [focusUnitId, setFocusUnitId] = useState(null);
+
+  const selectedUnit = useMemo(() => units.find((u) => u.id === selectedId) || null, [units, selectedId]);
+
+  const [dtCategoryCode, setDtCategoryCode] = useState("");
+  const [dtReasonCode, setDtReasonCode] = useState("");
+  const [dtDetails, setDtDetails] = useState("");
 
   const [search, setSearch] = useState("");
+  const [sevFilter, setSevFilter] = useState("ALL");
+  const [catFilter, setCatFilter] = useState("ALL");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [desktopSortKey, setDesktopSortKey] = useState("minutes");
 
-  const insightsRef = useRef(null);
+  const selectedCategory = useMemo(
+    () => DOWNTIME_CATALOG.find((c) => c.code === dtCategoryCode) || null,
+    [dtCategoryCode]
+  );
 
-  // Live clock tick (keeps open sessions updating)
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = window.setInterval(() => setTick((x) => x + 1), 5000);
-    return () => window.clearInterval(t);
+  const reasonsForCategory = useMemo(() => selectedCategory?.reasons || [], [selectedCategory]);
+
+  const { liveLog, activeDowntimeMap, openDowntimeStartMap, sessionHistory } = useMemo(
+    () => deriveDowntimeState(log || []),
+    [log]
+  );
+
+  const canonicalEntries = useMemo(() => buildCanonicalEntriesFromSessions(sessionHistory), [sessionHistory]);
+
+  const alignedAnalytics = useMemo(
+    () => buildDowntimeAnalytics(canonicalEntries.systemEntries, canonicalEntries.manualEntries),
+    [canonicalEntries]
+  );
+
+  const sessionAnalytics = useMemo(
+    () => buildSessionAnalytics(sessionHistory, activeDowntimeMap, liveLog),
+    [sessionHistory, activeDowntimeMap, liveLog]
+  );
+
+  const activeHoldIds = useMemo(() => Object.keys(activeDowntimeMap), [activeDowntimeMap]);
+
+  const filteredHistory = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return sessionHistory.filter((n) => {
+      const sevOk = sevFilter === "ALL" ? true : n.severity === sevFilter;
+      const catOk = catFilter === "ALL" ? true : n.category === catFilter;
+      const text = [n.unitName, n.stationName, n.category, n.reason, n.shiftKey, n.sourceType, n.businessDate]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const qOk = q.length === 0 ? true : text.includes(q);
+      return sevOk && catOk && qOk;
+    });
+  }, [sessionHistory, search, sevFilter, catFilter]);
+
+  const selectedUnitDetail = useMemo(() => {
+    if (!selectedUnit) return null;
+    const unitSessions = sessionHistory.filter((n) => n.unitId === selectedUnit.id);
+    const unitEntries = buildCanonicalEntriesFromSessions(unitSessions);
+    const unitAnalytics = buildDowntimeAnalytics(unitEntries.systemEntries, unitEntries.manualEntries);
+    const latest = [...unitSessions].sort((a, b) => Date.parse(b.startISO || 0) - Date.parse(a.startISO || 0))[0] || null;
+
+    return {
+      totalSessions: unitSessions.length,
+      activeSessions: unitSessions.filter((n) => n.status === "ACTIVE").length,
+      closedSessions: unitSessions.filter((n) => n.status === "CLOSED").length,
+      daily: unitAnalytics.daily,
+      topReason: unitAnalytics.daily.reasonsUnplannedMerged?.[0]?.label || "—",
+      topCategory: unitAnalytics.daily.categoriesUnplannedMerged?.[0]?.label || "—",
+      latest,
+    };
+  }, [selectedUnit, sessionHistory]);
+
+  const unitComparisonRows = useMemo(() => {
+    const rows = [...sessionAnalytics.byUnit];
+    if (desktopSortKey === "active") {
+      rows.sort((a, b) => b.activeCount - a.activeCount);
+    } else if (desktopSortKey === "count") {
+      rows.sort((a, b) => b.count - a.count);
+    } else {
+      rows.sort((a, b) => b.totalMinutes - a.totalMinutes);
+    }
+    return rows;
+  }, [sessionAnalytics.byUnit, desktopSortKey]);
+
+  const activeRows = useMemo(
+    () => sessionHistory.filter((n) => n.status === "ACTIVE").sort((a, b) => Number(b.durationMs || 0) - Number(a.durationMs || 0)),
+    [sessionHistory]
+  );
+
+  const openDowntimeDialog = useCallback((unit) => {
+    if (!unit) return;
+    setSelectedId(unit.id);
+    setDtCategoryCode("");
+    setDtReasonCode("");
+    setDtDetails("");
   }, []);
 
-  const nowLive = useMemo(() => {
-    void tick;
-    return new Date();
-  }, [tick]);
+  const applyDowntimeStart = useCallback(
+    async ({ unit, category, reason, details }) => {
+      const tsISO = new Date().toISOString();
 
-  const nowMs = nowLive.getTime();
-  const dayRange = useMemo(() => ({ start: startOfDayLocal(nowLive), end: endOfDayLocal(nowLive), label: "Today" }), [nowLive]);
+      const event = buildEventPayload({
+        unit,
+        tsISO,
+        eventType: EVENT_TYPE.DT_START,
+        severity: category.severity,
+        category: category.group,
+        categoryCode: category.code,
+        reason: reason.label,
+        reasonCode: reason.code,
+        text: details?.trim() || `${category.group}: ${reason.label}`,
+        sourceType: SOURCE_TYPE.OPERATOR,
+      });
 
-  // Load persisted downtime memory once
-  const [persisted, setPersisted] = useState(() => loadPersisted());
+      try {
+        await postDowntimeStart({
+          payload: {
+            unitId: event.unitId,
+            unitName: event.unitName,
+            stationId: event.stationId,
+            stationName: event.stationName,
+            scopeType: event.scopeType,
+            tsISO: event.tsISO,
+            businessDate: event.businessDate,
+            shiftKey: event.shiftKey,
+            categoryCode: event.categoryCode,
+            reasonCode: event.reasonCode,
+            sourceType: event.sourceType,
+          },
+        });
+      } catch {
+        // keep UI responsive
+      }
 
-  // Ingest alarm log into persisted sessions
-  useEffect(() => {
-    const next = ingestLogToPersistedSessions({
-      log,
-      nowMs,
-      unitsById,
-      persisted,
-    });
+      pushAlarm(event);
+      setFocusUnitId(unit.id);
+      setSelectedId(null);
+      setDtCategoryCode("");
+      setDtReasonCode("");
+      setDtDetails("");
+    },
+    [pushAlarm]
+  );
 
-    if (next.changed) {
-      const payload = { sessions: next.sessions, lastCursorMs: next.lastCursorMs };
-      setPersisted(payload);
-      savePersisted(payload);
+  const applyDowntimeEnd = useCallback(
+    async (unitId) => {
+      const unit = units.find((u) => u.id === unitId);
+      if (!unit) return;
+
+      const startEvent = openDowntimeStartMap[unitId] || null;
+      const tsISO = new Date().toISOString();
+      const durationMs = startEvent?.tsISO ? Math.max(0, Date.parse(tsISO) - Date.parse(startEvent.tsISO)) : 0;
+
+      const event = buildEventPayload({
+        unit,
+        tsISO,
+        eventType: EVENT_TYPE.DT_END,
+        severity: SEVERITY.LOW,
+        category: startEvent?.category || "Resume",
+        categoryCode: "RESUME",
+        reason: startEvent?.reason || "Downtime Cleared",
+        reasonCode: "DT_CLEARED",
+        text: `Downtime cleared. Total stop time ${formatDurationMs(durationMs)}.`,
+        sourceType: SOURCE_TYPE.OPERATOR,
+        linkedEventId: startEvent?.id || null,
+      });
+
+      try {
+        await postDowntimeEnd({
+          payload: {
+            unitId: event.unitId,
+            unitName: event.unitName,
+            stationId: event.stationId,
+            stationName: event.stationName,
+            scopeType: event.scopeType,
+            tsISO: event.tsISO,
+            businessDate: event.businessDate,
+            shiftKey: event.shiftKey,
+            linkedEventId: event.linkedEventId,
+            durationMs,
+            sourceType: event.sourceType,
+          },
+        });
+      } catch {
+        // keep UI responsive
+      }
+
+      pushAlarm(event);
+    },
+    [openDowntimeStartMap, pushAlarm, units]
+  );
+
+  const handleSubmitDowntime = useCallback(() => {
+    if (!selectedUnit || !selectedCategory || !dtReasonCode) return;
+    const reason = selectedCategory.reasons.find((item) => item.code === dtReasonCode);
+    if (!reason) return;
+
+    if (activeDowntimeMap[selectedUnit.id]) {
+      setSelectedId(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log, nowMs, unitsById]);
 
-  // Derived sessions for charts (from persisted memory)
-  const sessions = useMemo(() => (Array.isArray(persisted?.sessions) ? persisted.sessions : []), [persisted]);
-
-  // Active map derived from persisted sessions (NOT from alarmCenter.log)
-  const activeAlarmMap = useMemo(() => buildActiveAlarmMapFromSessions(sessions, nowMs), [sessions, nowMs]);
-
-  const activeList = useMemo(() => {
-    const list = Object.values(activeAlarmMap || {});
-    return list.sort((a, b) => (b.startMs || 0) - (a.startMs || 0));
-  }, [activeAlarmMap]);
-
-  const activeCount = activeList.length;
-
-  const selectedUnit = useMemo(() => {
-    if (!selectedId || selectedId === "ALL") return null;
-    return units.find((u) => u.id === selectedId) || null;
-  }, [selectedId, units]);
-
-  const selectionKey = selectedId || "ALL";
-  const selectionLabel = selectedUnit ? selectedUnit.name : "All Units";
-
-  // Daily reasons (selected unit or all)
-  const todayReasons = useMemo(() => aggregateReasons(sessions, dayRange.start, dayRange.end, selectionKey), [sessions, dayRange.start, dayRange.end, selectionKey]);
-  const paretoToday = useMemo(() => buildParetoToday(todayReasons, 12), [todayReasons]);
-
-  const shiftAgg = useMemo(() => aggregateShiftDowntimeByCategory(sessions, nowLive, selectionKey), [sessions, nowLive, selectionKey]);
-  const shiftRows = shiftAgg.rows;
-  const shiftCategories = shiftAgg.categories;
-
-  const topReasonsShift = useMemo(() => aggregateTopReasonsByShift(sessions, nowLive, selectionKey, 12), [sessions, nowLive, selectionKey]);
-  const trend14d = useMemo(() => bucketDailyDowntimeMinutes(sessions, 14, nowLive, selectionKey), [sessions, nowLive, selectionKey]);
-
-  const ganttToday = useMemo(() => buildTodayGantt(sessions, nowLive, selectionKey, 8), [sessions, nowLive, selectionKey]);
-
-  const todayTotalMin = useMemo(() => todayReasons.reduce((acc, r) => acc + msToMinutes(r.ms), 0), [todayReasons]);
-
-  // New: Daily Summary (All Units)
-  const dailyTotalsAll = useMemo(() => buildDailyUnitTotals(sessions, nowLive, "ALL"), [sessions, nowLive]);
-  const maxUnitToday = dailyTotalsAll.rows?.[0] || null;
-
-  const maxUnitTopReason = useMemo(() => {
-    if (!maxUnitToday?.unitId) return null;
-    return buildTopReasonForUnitToday(sessions, nowLive, maxUnitToday.unitId);
-  }, [sessions, nowLive, maxUnitToday?.unitId]);
-
-  const rankingToday = useMemo(() => {
-    return (dailyTotalsAll.rows || []).slice(0, 14).map((r) => ({
-      unit: r.unitName,
-      unitId: r.unitId,
-      minutes: r.minutes || 0,
-    }));
-  }, [dailyTotalsAll.rows]);
-
-  const filteredActive = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = activeList.filter((a) => (selectionKey === "ALL" ? true : a.unitId === selectionKey));
-
-    if (!q) return list;
-
-    return list.filter((a) => {
-      const text = `${a.unitName || ""} ${a.unitId || ""} ${a.category || ""} ${a.reason || ""}`.toLowerCase();
-      return text.includes(q);
+    applyDowntimeStart({
+      unit: selectedUnit,
+      category: selectedCategory,
+      reason,
+      details: dtDetails,
     });
-  }, [activeList, search, selectionKey]);
+  }, [selectedUnit, selectedCategory, dtReasonCode, dtDetails, activeDowntimeMap, applyDowntimeStart]);
+
+  const pad = isMobile ? 12 : isTablet ? 14 : 18;
+  const framePad = isMobile ? 10 : isTablet ? 12 : 14;
+  const canvasH = isMobile ? 560 : isTablet ? 640 : 760;
+  const gridCols = isTablet || isMobile ? "1fr" : "minmax(0, 1.35fr) minmax(420px, 0.95fr)";
 
   const frameSx = useMemo(
     () => ({
@@ -1709,386 +2369,516 @@ export default function DowntimePage() {
     [pad]
   );
 
-  const onReset = useCallback(() => {
-    setSelectedId("ALL");
-    setSearch("");
-  }, []);
-
-  const onSelectUnitFromMap = useCallback((u) => {
-    setSelectedId(u?.id ? u.id : "ALL");
-    window.setTimeout(() => insightsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 60);
-  }, []);
-
-  const resolveUnit = useCallback(
-    (unitId) => {
-      if (!unitId) return;
-
-      // Close in persisted memory immediately
-      const now = Date.now();
-      const nextSessions = (Array.isArray(persisted?.sessions) ? persisted.sessions : []).map((s) => {
-        if (s?.unitId === unitId && s?.isOpen) {
-          return { ...s, isOpen: false, endMs: now, endISO: safeISO(now), closedByManual: true };
-        }
-        return s;
-      });
-
-      const payload = { sessions: nextSessions, lastCursorMs: Number(persisted?.lastCursorMs || 0) };
-      setPersisted(payload);
-      savePersisted(payload);
-
-      // Push DT_END to keep alignment with alarm store (optional but recommended)
-      const u = unitsById.get(unitId);
-      pushAlarm?.({
-        id: `manual-end-${now}-${unitId}`,
-        tsISO: safeISO(now),
-        unitId,
-        unitName: u?.name || unitId,
-        severity: "LOW",
-        category: "Process",
-        reason: "Manual Resume",
-        text: "Downtime End — Manual Resume",
-        eventType: EVENT_TYPE.DT_END,
-      });
-    },
-    [persisted, pushAlarm, unitsById]
-  );
-
-  const clearDowntimeMemory = useCallback(() => {
-    const payload = { sessions: [], lastCursorMs: 0 };
-    setPersisted(payload);
-    savePersisted(payload);
-  }, []);
-
-  const rightControls = (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-      <Chip
-        size="small"
-        label="Mode: Daily (3 shifts)"
-        variant="outlined"
-        sx={{ color: PAGE.muted, borderColor: "rgba(255,255,255,0.12)" }}
-      />
-      <Tooltip title="Clear downtime memory (demo only)" arrow>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={clearDowntimeMemory}
-          sx={{ borderColor: "rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.78)" }}
-        >
-          Clear DT Memory
-        </Button>
-      </Tooltip>
-    </Stack>
-  );
-
-  const kpis = (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-      <Chip
-        size="small"
-        label={`Today DT: ${formatMinutes(todayTotalMin)}`}
-        variant="outlined"
-        sx={{ color: "rgba(255,255,255,0.80)", borderColor: "rgba(59,130,246,0.35)", bgcolor: "rgba(59,130,246,0.06)" }}
-      />
-      <Chip
-        size="small"
-        label={`Memory Sessions: ${sessions.length}`}
-        variant="outlined"
-        sx={{ color: PAGE.muted, borderColor: "rgba(255,255,255,0.12)" }}
-      />
-    </Stack>
-  );
-
   return (
     <Box sx={frameSx}>
       <Box
         sx={{
           width: "100%",
-          maxWidth: 1460,
+          maxWidth: 1560,
           mx: "auto",
-          border: `1px solid ${PAGE.borderSoft}`,
-          borderRadius: 4,
-          bgcolor: "rgba(255,255,255,0.015)",
-          boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
-          overflow: "hidden",
+          display: "grid",
+          gap: 1.5,
         }}
       >
-        <Box sx={{ p: `${framePad}px`, boxSizing: "border-box" }}>
-          <Box sx={{ width: "100%", display: "grid", gridTemplateColumns: gridCols, gap: `${framePad}px`, alignItems: "stretch", minHeight: 0 }}>
-            {/* LEFT */}
-            <Box sx={{ minHeight: 0, minWidth: 0 }}>
-              <CadView
-                units={units}
-                selectedId={selectedId === "ALL" ? null : selectedId}
-                hoveredId={hoveredId}
-                onHoverChange={setHoveredId}
-                onSelect={onSelectUnitFromMap}
-                heightPx={canvasH}
-                isMobile={isMobile}
-                onZoomUpdate={setZoomDist}
-                activeAlarmMap={activeAlarmMap}
-              />
+        <Box sx={{ display: "grid", gap: 0.5 }}>
+          <Typography sx={{ color: PAGE.text, fontWeight: 900, fontSize: isMobile ? 22 : 24 }}>
+            Downtime Center
+          </Typography>
+          <Typography sx={{ color: PAGE.subtext }}>
+            Shift-aligned downtime analytics with the same logic path as DevicesPage.
+          </Typography>
+        </Box>
 
-              <Box
-                sx={{
-                  mt: 1.1,
-                  px: 0.5,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 1.2,
-                  flexWrap: "wrap",
-                  color: PAGE.subtext,
-                  fontSize: 12,
-                }}
-              >
-                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                  <span>Zoom: {zoomDist ? Math.round(zoomDist) : "—"}</span>
-                  <span>Units: {units.length}</span>
-                  <span>Active: {activeCount}</span>
-                  <span>Selection: {selectionLabel}</span>
-                </Box>
+        <SectionGrid min={180} gap={10}>
+          <KpiCard
+            label="Daily Unplanned Total"
+            value={formatMinutes(alignedAnalytics.daily.unplannedMergedMin)}
+            subvalue={`24h total ${DAILY_TOTAL_MIN} min`}
+            tone="warn"
+          />
+          <KpiCard
+            label="Daily Downtime %"
+            value={formatPercent(alignedAnalytics.daily.downtimePctOfNet)}
+            subvalue={`On ${DAILY_NET_WORK_MIN} min net`}
+            tone={pickToneByMinutes(alignedAnalytics.daily.unplannedMergedMin)}
+          />
+          <KpiCard
+            label="Daily Running"
+            value={formatMinutes(alignedAnalytics.daily.operatingMin)}
+            subvalue={`Planned ${formatMinutes(alignedAnalytics.daily.plannedMin)}`}
+            tone="success"
+          />
+          <KpiCard
+            label="System Unplanned"
+            value={formatMinutes(alignedAnalytics.daily.systemUnplannedMin)}
+            subvalue="Merged into daily total"
+            tone="info"
+          />
+          <KpiCard
+            label="Manual Unplanned"
+            value={formatMinutes(alignedAnalytics.daily.manualUnplannedMin)}
+            subvalue="Operator / team lead source"
+            tone="purple"
+          />
+          <KpiCard
+            label="Reconciliation"
+            value={
+              alignedAnalytics.reconciliation.reconciliationStatus === "within_tolerance"
+                ? "Synced"
+                : alignedAnalytics.reconciliation.reconciliationStatus === "outside_tolerance"
+                ? "Review"
+                : alignedAnalytics.reconciliation.reconciliationStatus === "system_only"
+                ? "System Only"
+                : alignedAnalytics.reconciliation.reconciliationStatus === "manual_only"
+                ? "Manual Only"
+                : "Balanced"
+            }
+            subvalue={`Variance ${formatMinutes(alignedAnalytics.reconciliation.varianceMin)} / tolerance ${formatMinutes(
+              alignedAnalytics.reconciliation.toleranceMin
+            )}`}
+            tone={alignedAnalytics.reconciliation.withinTolerance ? "success" : "warn"}
+          />
+        </SectionGrid>
 
-                <Typography sx={{ color: PAGE.muted, fontSize: 12 }}>
-                  DT memory is persisted (charts won’t drop to zero if alarm history is cleared)
-                </Typography>
-              </Box>
-            </Box>
+        <SectionGrid min={220} gap={10}>
+          {["Maintenance", "Break", "Process"].map((item) => (
+            <Card
+              key={item}
+              title={item}
+              subtitle="24h category count"
+              tone={item === "Maintenance" ? "danger" : item === "Process" ? "warn" : "accent"}
+              right={
+                <div
+                  style={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 12,
+                    border: `1px solid ${PAGE.border}`,
+                    background: "rgba(255,255,255,0.05)",
+                    color: PAGE.text,
+                  }}
+                >
+                  <CategoryRoundedIcon fontSize="small" />
+                </div>
+              }
+            >
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ color: PAGE.text, fontWeight: 900, fontSize: 22 }}>
+                  {formatNumber(sessionAnalytics.byCategory.find((x) => x.label === item)?.value || 0)}
+                </div>
+                <div style={{ color: PAGE.subtext, fontSize: 12 }}>Sessions in the last 24h</div>
+              </div>
+            </Card>
+          ))}
+        </SectionGrid>
 
-            {/* RIGHT */}
-            <Box ref={insightsRef} sx={{ minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: `${framePad}px` }}>
-              <MetricStrip
-                selectionLabel={selectionLabel}
-                activeCount={activeCount}
-                onReset={onReset}
-                rightControls={rightControls}
-                kpis={kpis}
-              />
+        <Box
+          sx={{
+            width: "100%",
+            border: `1px solid ${PAGE.borderSoft}`,
+            borderRadius: 4,
+            bgcolor: "rgba(255,255,255,0.015)",
+            boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+            overflow: "hidden",
+          }}
+        >
+          <Box sx={{ p: `${framePad}px`, boxSizing: "border-box" }}>
+            <Box
+              sx={{
+                width: "100%",
+                display: "grid",
+                gridTemplateColumns: gridCols,
+                gap: `${framePad}px`,
+                alignItems: "stretch",
+                minHeight: 0,
+              }}
+            >
+              <Box sx={{ minHeight: 0, minWidth: 0 }}>
+                <CadView
+                  units={units}
+                  selectedId={selectedId}
+                  hoveredId={hoveredId}
+                  onHoverChange={setHoveredId}
+                  onSelect={openDowntimeDialog}
+                  heightPx={canvasH}
+                  isMobile={isMobile}
+                  onZoomUpdate={setZoomDist}
+                  activeDowntimeMap={activeDowntimeMap}
+                  focusUnitId={focusUnitId}
+                  onFocusDone={() => setFocusUnitId(null)}
+                />
 
-              {/* Daily Summary Panel */}
-              <Panel
-                title="Daily Summary (All Units)"
-                subtitle="Max downtime unit + ranking (Today)"
-                icon={<BarChartRoundedIcon fontSize="small" />}
-              >
-                <Stack spacing={1.2}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 1.2,
-                      borderRadius: 3,
-                      bgcolor: "rgba(255,255,255,0.02)",
-                      border: `1px solid ${PAGE.borderSoft}`,
-                    }}
-                  >
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2} flexWrap="wrap">
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>Max Downtime Unit (Today)</Typography>
-                        <Typography sx={{ color: PAGE.text, fontWeight: 950, fontSize: 14 }} noWrap>
-                          {maxUnitToday ? `${maxUnitToday.unitName}` : "—"}
-                        </Typography>
-                        <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 0.4 }}>
-                          Total DT: <b style={{ color: PAGE.text }}>{maxUnitToday ? formatMinutes(maxUnitToday.minutes) : "—"}</b>
-                          {maxUnitToday ? ` • Events: ${maxUnitToday.events || 0}` : ""}
-                        </Typography>
-                      </Box>
-
-                      <Box sx={{ minWidth: 260 }}>
-                        <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>Top Reason (for Max Unit)</Typography>
-                        <Typography
-                          sx={{ color: PAGE.text, fontWeight: 900, fontSize: 12, mt: 0.3 }}
-                          noWrap
-                          title={maxUnitTopReason ? `${maxUnitTopReason.category} — ${maxUnitTopReason.reason}` : ""}
-                        >
-                          {maxUnitTopReason ? `${maxUnitTopReason.category} — ${maxUnitTopReason.reason}` : "—"}
-                        </Typography>
-                        <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 0.4 }}>
-                          Share: <b style={{ color: PAGE.text }}>{maxUnitTopReason ? `${maxUnitTopReason.pctOfUnit}%` : "—"}</b>
-                          {maxUnitTopReason ? ` • ${formatMinutes(maxUnitTopReason.minutes)}` : ""}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                  </Paper>
-
-                  <Divider sx={{ borderColor: PAGE.borderSoft }} />
-
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>
-                    Ranking (Today) — Total downtime minutes (All Units), sorted high → low
-                  </Typography>
-
-                  <Box sx={{ width: "100%", height: 300 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={rankingToday} margin={{ top: 12, right: 18, left: 10, bottom: 10 }}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                        <XAxis dataKey="unit" tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} hide />
-                        <YAxis tick={{ fill: "rgba(255,255,255,0.60)", fontSize: 11 }} />
-                        <RTooltip
-                          content={({ active, payload }) => {
-                            if (!active || !payload?.length) return null;
-                            const p = payload[0]?.payload || {};
-                            return (
-                              <Box sx={{ p: 1.1, borderRadius: 2, bgcolor: "rgba(10,14,18,0.95)", border: "1px solid rgba(255,255,255,0.10)" }}>
-                                <Typography sx={{ color: PAGE.text, fontSize: 12, fontWeight: 950 }}>{p.unit}</Typography>
-                                <Typography sx={{ color: PAGE.subtext, fontSize: 12 }}>DT: {formatMinutes(p.minutes || 0)}</Typography>
-                                <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>UnitId: {p.unitId}</Typography>
-                              </Box>
-                            );
-                          }}
-                        />
-                        <Bar dataKey="minutes" fill="rgba(59,130,246,0.85)" radius={[10, 10, 0, 0]}>
-                          <LabelList
-                            dataKey="minutes"
-                            position="top"
-                            formatter={(v) => (v ? formatMinutes(v) : "")}
-                            style={{ fill: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: 900 }}
-                          />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                <Box
+                  sx={{
+                    mt: 1.2,
+                    px: 0.5,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1.2,
+                    flexWrap: "wrap",
+                    color: PAGE.subtext,
+                    fontSize: 12,
+                  }}
+                >
+                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                    <span>Zoom: {zoomDist ? Math.round(zoomDist) : "—"}</span>
+                    <span>Units: {units.length}</span>
+                    <span>Active DT: {activeHoldIds.length}</span>
+                    <span>24h Sessions: {sessionHistory.length}</span>
+                    <span>24h Buffer: {liveLog.length}</span>
+                    <span>Unread: {unread}</span>
                   </Box>
 
-                  <Typography sx={{ color: PAGE.muted, fontSize: 12 }}>
-                    Total downtime (All Units Today): <b style={{ color: PAGE.text }}>{formatMinutes(dailyTotalsAll.totalMinutesAll || 0)}</b>
-                  </Typography>
-                </Stack>
-              </Panel>
-
-              <Panel
-                title="Shift Timeline Gantt (Today)"
-                subtitle={`SCADA-style timeline • Top units by downtime • ${selectionLabel}`}
-                icon={<BarChartRoundedIcon fontSize="small" />}
-              >
-                <TodayShiftGantt rows={ganttToday} dayLocal={nowLive} />
-              </Panel>
-
-              <Panel
-                title="Downtime by Shift (Today)"
-                subtitle={`A(06-14) / B(14-22) / C(22-06) • Stacked by Category • ${selectionLabel}`}
-                icon={<BarChartRoundedIcon fontSize="small" />}
-              >
-                <ShiftDowntimeStacked rows={shiftRows} categories={shiftCategories} />
-              </Panel>
-
-              <Panel title="Industrial Pareto (Today)" subtitle={`Top drivers and cumulative impact • ${selectionLabel}`} icon={<BarChartRoundedIcon fontSize="small" />}>
-                <ParetoToday data={paretoToday} />
-              </Panel>
-
-              <Panel title="Top Reasons by Shift (Today)" subtitle={`Category — Reason matrix • ${selectionLabel}`} icon={<BarChartRoundedIcon fontSize="small" />}>
-                <ReasonShiftHeatmap rows={topReasonsShift} />
-              </Panel>
-
-              <Panel title="Daily Trend (Last 14 Days)" subtitle={`Downtime minutes (persisted memory) • ${selectionLabel}`} icon={<BarChartRoundedIcon fontSize="small" />}>
-                <DailyTrend14d data={trend14d} />
-                <Divider sx={{ mt: 1.0, borderColor: PAGE.borderSoft }} />
-                <Typography sx={{ color: PAGE.muted, fontSize: 12, mt: 1 }}>
-                  Trend uses day buckets; sessions are clipped to each day window.
-                </Typography>
-              </Panel>
-
-              <Panel
-                title="Active Alarms / Downtime (Persisted)"
-                subtitle="This list is derived from downtime memory (not from live alarm history)"
-                icon={<BoltRoundedIcon fontSize="small" />}
-                right={
                   <Stack direction="row" spacing={1} alignItems="center">
-                    <TextField
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      size="small"
-                      placeholder="Search unit / reason"
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchRoundedIcon fontSize="small" />
-                          </InputAdornment>
-                        ),
-                      }}
-                      sx={{
-                        minWidth: isMobile ? 200 : 260,
-                        "& .MuiInputBase-root": { bgcolor: "rgba(255,255,255,0.03)", borderRadius: 2 },
-                      }}
-                    />
-                  </Stack>
-                }
-              >
-                {filteredActive.length ? (
-                  <Stack spacing={1}>
-                    {filteredActive.slice(0, 14).map((a) => {
-                      const durMin = msToMinutes((a.endMs || nowMs) - (a.startMs || nowMs));
-                      const title = a.unitName || a.unitId;
-                      const sub = `${normalizeText(a.category)} • ${normalizeText(a.reason)}`;
-                      const started = a.startMs ? new Date(a.startMs).toLocaleString() : "—";
-
-                      return (
-                        <Paper
-                          key={`${a.unitId}-${a.startMs}`}
-                          elevation={0}
+                    {isMobile ? (
+                      <Tooltip title="Open history" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => setHistoryOpen(true)}
                           sx={{
-                            p: 1.1,
-                            borderRadius: 3,
-                            bgcolor: "rgba(255,255,255,0.02)",
+                            color: "rgba(255,255,255,0.78)",
                             border: `1px solid ${PAGE.borderSoft}`,
+                            borderRadius: 2,
+                            bgcolor: "rgba(255,255,255,0.03)",
                           }}
                         >
-                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1} flexWrap="wrap">
-                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                              <Typography sx={{ color: PAGE.text, fontWeight: 900, fontSize: 13 }} noWrap>
-                                {title}
-                              </Typography>
-                              <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap title={sub}>
-                                {sub}
-                              </Typography>
-
-                              <Stack direction="row" spacing={1} sx={{ mt: 0.8, flexWrap: "wrap" }}>
-                                <Chip size="small" label="ACTIVE" color="warning" variant="outlined" sx={{ borderColor: "rgba(245,158,11,0.55)" }} />
-                                <Chip
-                                  size="small"
-                                  label={`Duration: ${formatMinutes(durMin)}`}
-                                  variant="outlined"
-                                  sx={{ color: PAGE.muted, borderColor: "rgba(255,255,255,0.12)" }}
-                                />
-                                <Chip
-                                  size="small"
-                                  label={`Started: ${started}`}
-                                  variant="outlined"
-                                  sx={{ color: PAGE.muted, borderColor: "rgba(255,255,255,0.12)" }}
-                                />
-                              </Stack>
-                            </Box>
-
-                            <Box sx={{ textAlign: "right", minWidth: 160 }}>
-                              <Typography sx={{ color: PAGE.text, fontWeight: 950, whiteSpace: "nowrap" }}>{formatMinutes(durMin)}</Typography>
-                              <Typography sx={{ color: PAGE.muted, fontSize: 11, mt: 0.4, whiteSpace: "nowrap" }}>UnitId: {a.unitId}</Typography>
-
-                              <Tooltip title="Manual Resume / Resolve (closes session in DT memory)" arrow>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  startIcon={<DoneAllRoundedIcon />}
-                                  onClick={() => resolveUnit(a.unitId)}
-                                  sx={{ mt: 1, borderColor: "rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.85)" }}
-                                >
-                                  Resolve
-                                </Button>
-                              </Tooltip>
-                            </Box>
-                          </Stack>
-                        </Paper>
-                      );
-                    })}
-
-                    {filteredActive.length > 14 ? (
-                      <Typography sx={{ color: PAGE.muted, fontSize: 12 }}>Showing 14 / {filteredActive.length}</Typography>
+                          <HistoryRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     ) : null}
+
+                    <Tooltip title="Reset filters" arrow>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setSearch("");
+                          setSevFilter("ALL");
+                          setCatFilter("ALL");
+                        }}
+                        sx={{
+                          color: "rgba(255,255,255,0.78)",
+                          border: `1px solid ${PAGE.borderSoft}`,
+                          borderRadius: 2,
+                          bgcolor: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <RestartAltRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
-                ) : (
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 13 }}>
-                    No active downtime/alarm found for current filters.
-                  </Typography>
-                )}
-              </Panel>
+                </Box>
+              </Box>
+
+              <Box sx={{ display: "grid", gap: 1.2, minWidth: 0, alignContent: "start" }}>
+                <Card
+                  title="Active Downtime Board"
+                  subtitle="Open downtime sessions"
+                  tone="danger"
+                  right={<div style={{ color: PAGE.subtext, fontWeight: 800, fontSize: 12 }}>{formatNumber(activeRows.length)} active</div>}
+                >
+                  <ActiveDowntimeBoard
+                    rows={activeRows.slice(0, 6)}
+                    onFocus={(unitId) => setFocusUnitId(unitId)}
+                    onResume={(unitId) => applyDowntimeEnd(unitId)}
+                  />
+                </Card>
+
+                <Card title="Hourly Downtime Arc" subtitle="12 hours • each segment = 1 hour" tone="warn">
+                  <HalfDonutHourlyChart rows={sessionAnalytics.hourlyTrend} />
+                </Card>
+              </Box>
             </Box>
           </Box>
         </Box>
+
+        <SectionGrid min={360}>
+          <Card title="Shift Totals / Daily Mix" subtitle="Same logic path as DevicesPage" tone="accent">
+            <SectionGrid min={145} gap={10}>
+              <KpiCard label="Shift Length" value={formatMinutes(SHIFT_TOTAL_MIN)} subvalue="Per shift" tone="default" />
+              <KpiCard label="Planned / Shift" value={formatMinutes(PLANNED_BREAK_MIN)} subvalue="Break bucket" tone="accent" />
+              <KpiCard label="Net / Shift" value={formatMinutes(NET_WORK_MIN)} subvalue="Operational base" tone="success" />
+              <KpiCard label="Day Length" value={formatMinutes(DAILY_TOTAL_MIN)} subvalue="3 shifts" tone="default" />
+              <KpiCard label="Planned / Day" value={formatMinutes(PLANNED_BREAK_MIN * 3)} subvalue="3x planned" tone="accent" />
+              <KpiCard label="Net / Day" value={formatMinutes(DAILY_NET_WORK_MIN)} subvalue="For daily %" tone="success" />
+            </SectionGrid>
+
+            <div style={{ marginTop: 14 }}>
+              <ShiftLossCompare rows={alignedAnalytics.byShiftList} />
+            </div>
+          </Card>
+
+          <Card title="Daily Category Mix" subtitle="All 3 shifts merged" tone="success">
+            <LegendList items={alignedAnalytics.daily.categoriesUnplannedMerged} suffix=" min" />
+          </Card>
+        </SectionGrid>
+
+        <SectionGrid min={360}>
+          <Card
+            title="Top Units by Downtime Impact"
+            subtitle="Which units are generating the biggest downtime load"
+            tone="accent"
+            right={
+              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                <SortButton active={desktopSortKey === "minutes"} onClick={() => setDesktopSortKey("minutes")}>
+                  Minutes
+                </SortButton>
+                <SortButton active={desktopSortKey === "count"} onClick={() => setDesktopSortKey("count")}>
+                  Count
+                </SortButton>
+                <SortButton active={desktopSortKey === "active"} onClick={() => setDesktopSortKey("active")}>
+                  Active
+                </SortButton>
+              </Stack>
+            }
+          >
+            <HorizontalBarChart
+              rows={unitComparisonRows.map((row) => ({
+                ...row,
+                label: row.label,
+                value: desktopSortKey === "count" ? row.count : desktopSortKey === "active" ? row.activeCount : row.totalMinutes,
+              }))}
+              valueKey="value"
+              unit={desktopSortKey === "minutes" ? " min" : ""}
+              onRowClick={(row) => setFocusUnitId(row.id)}
+            />
+          </Card>
+
+          <Card title="Top Downtime Reasons" subtitle="Daily merged reason minutes" tone="warn">
+            <HorizontalBarChart
+              rows={alignedAnalytics.daily.reasonsUnplannedMerged.map((row) => ({
+                ...row,
+                value: row.value,
+              }))}
+              valueKey="value"
+              unit=" min"
+            />
+          </Card>
+        </SectionGrid>
+
+        <SectionGrid min={360}>
+          <Card title="Operational Insight" subtitle="Lightweight exact summary instead of heavy history card" tone="purple">
+            <div style={{ display: "grid", gap: 12 }}>
+              <InfoLine label="Daily Total" value={formatMinutes(alignedAnalytics.daily.unplannedMergedMin)} />
+              <InfoLine label="Daily %" value={formatPercent(alignedAnalytics.daily.downtimePctOfNet)} />
+              <InfoLine label="Running Today" value={formatMinutes(alignedAnalytics.daily.operatingMin)} />
+              <InfoLine label="Top Category" value={alignedAnalytics.daily.categoriesUnplannedMerged?.[0]?.label || "—"} />
+              <InfoLine label="Top Reason" value={alignedAnalytics.daily.reasonsUnplannedMerged?.[0]?.label || "—"} />
+              <InfoLine
+                label="Last Manual"
+                value={
+                  alignedAnalytics.reconciliation.lastManualEntry
+                    ? formatTs(
+                        alignedAnalytics.reconciliation.lastManualEntry.endedAt ||
+                          alignedAnalytics.reconciliation.lastManualEntry.startedAt
+                      )
+                    : "—"
+                }
+              />
+              <InfoLine
+                label="Last System"
+                value={
+                  alignedAnalytics.reconciliation.lastSystemEntry
+                    ? formatTs(
+                        alignedAnalytics.reconciliation.lastSystemEntry.endedAt ||
+                          alignedAnalytics.reconciliation.lastSystemEntry.startedAt
+                      )
+                    : "—"
+                }
+              />
+              <InfoLine label="Reconciliation" value={alignedAnalytics.reconciliation.reconciliationStatus} />
+            </div>
+          </Card>
+
+          <Card title="Selected Unit Detail" subtitle="Unit-focused downtime summary" tone="default">
+            {!selectedUnit ? (
+              <Typography sx={{ color: PAGE.subtext }}>Select a unit from the 3D map.</Typography>
+            ) : (
+              <Box sx={{ display: "grid", gap: 1.5 }}>
+                <SectionGrid min={145} gap={10}>
+                  <KpiCard label="DT Sessions" value={formatNumber(selectedUnitDetail?.totalSessions || 0)} tone="accent" />
+                  <KpiCard
+                    label="Active"
+                    value={formatNumber(selectedUnitDetail?.activeSessions || 0)}
+                    tone={pickToneByCount(selectedUnitDetail?.activeSessions || 0)}
+                  />
+                  <KpiCard label="Closed" value={formatNumber(selectedUnitDetail?.closedSessions || 0)} tone="success" />
+                  <KpiCard label="Unit Total" value={formatMinutes(selectedUnitDetail?.daily?.unplannedMergedMin || 0)} tone="warn" />
+                </SectionGrid>
+
+                <Box
+                  sx={{
+                    border: `1px solid ${PAGE.border}`,
+                    background: "rgba(255,255,255,0.03)",
+                    borderRadius: 2.5,
+                    p: 1.75,
+                    display: "grid",
+                    gap: 1.1,
+                  }}
+                >
+                  <InfoLine label="Unit" value={selectedUnit?.name} />
+                  <InfoLine label="Top Category" value={selectedUnitDetail?.topCategory} />
+                  <InfoLine label="Top Reason" value={selectedUnitDetail?.topReason} />
+                  <InfoLine label="Daily %" value={formatPercent(selectedUnitDetail?.daily?.downtimePctOfNet || 0)} />
+                  <InfoLine label="Latest Status" value={selectedUnitDetail?.latest?.status || "—"} />
+                  <InfoLine label="Latest Start" value={formatTs(selectedUnitDetail?.latest?.startISO)} />
+                  <InfoLine
+                    label="Latest End"
+                    value={selectedUnitDetail?.latest?.endISO ? formatTs(selectedUnitDetail?.latest?.endISO) : "Still active"}
+                  />
+                </Box>
+              </Box>
+            )}
+          </Card>
+        </SectionGrid>
       </Box>
+
+      <Drawer
+        anchor="bottom"
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        PaperProps={{
+          sx: {
+            bgcolor: PAGE.panel,
+            color: PAGE.text,
+            borderTopLeftRadius: 18,
+            borderTopRightRadius: 18,
+            borderTop: `1px solid ${PAGE.border}`,
+            height: "86dvh",
+            width: "100%",
+            overflow: "hidden",
+          },
+        }}
+      >
+        <Box
+          sx={{
+            p: 1.5,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            borderBottom: `1px solid ${PAGE.borderSoft}`,
+            bgcolor: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 900, fontSize: 15 }} noWrap>
+              Downtime Sessions
+            </Typography>
+            <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap>
+              Last 24 hours
+            </Typography>
+          </Box>
+
+          <IconButton
+            size="small"
+            onClick={() => setHistoryOpen(false)}
+            sx={{
+              color: "rgba(255,255,255,0.8)",
+              border: `1px solid ${PAGE.borderSoft}`,
+              borderRadius: 2,
+              bgcolor: "rgba(255,255,255,0.03)",
+            }}
+          >
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <Box sx={{ p: 1.5, height: "calc(86dvh - 64px)", overflow: "auto" }}>
+          <SessionHistory
+            sessionHistory={sessionHistory}
+            filteredHistory={filteredHistory}
+            search={search}
+            setSearch={setSearch}
+            sevFilter={sevFilter}
+            setSevFilter={setSevFilter}
+            catFilter={catFilter}
+            setCatFilter={setCatFilter}
+            onClear={clearAll}
+            onResetFilters={() => {
+              setSearch("");
+              setSevFilter("ALL");
+              setCatFilter("ALL");
+            }}
+            onClickItem={(n) => {
+              if (n?.unitId) setFocusUnitId(n.unitId);
+              setHistoryOpen(false);
+            }}
+            mobileSizing
+          />
+        </Box>
+      </Drawer>
+
+      <Dialog open={!!selectedUnit} onClose={() => setSelectedId(null)} maxWidth="sm" fullWidth>
+        <Box sx={{ p: 2 }}>
+          <Typography sx={{ fontWeight: 900, mb: 1.5 }}>Start Downtime — {selectedUnit?.name || "—"}</Typography>
+
+          <Typography sx={{ color: "text.secondary", fontSize: 13, mb: 1 }}>
+            This workflow is only for formal downtime entry and resume tracking.
+          </Typography>
+
+          <Divider sx={{ mb: 2 }} />
+
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mb: 1 }}>Category</Typography>
+          <Select
+            value={dtCategoryCode}
+            onChange={(e) => {
+              setDtCategoryCode(e.target.value);
+              setDtReasonCode("");
+            }}
+            fullWidth
+          >
+            {DOWNTIME_CATALOG.map((c) => (
+              <MenuItem key={c.code} value={c.code}>
+                {c.group}
+              </MenuItem>
+            ))}
+          </Select>
+
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mt: 2, mb: 1 }}>Reason</Typography>
+          <Select value={dtReasonCode} onChange={(e) => setDtReasonCode(e.target.value)} fullWidth disabled={!dtCategoryCode}>
+            {reasonsForCategory.map((r) => (
+              <MenuItem key={r.code} value={r.code}>
+                {r.label}
+              </MenuItem>
+            ))}
+          </Select>
+
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mt: 2, mb: 1 }}>Explanation / Details</Typography>
+          <TextField
+            value={dtDetails}
+            onChange={(e) => setDtDetails(e.target.value)}
+            placeholder="Optional operator note"
+            fullWidth
+            multiline
+            minRows={3}
+          />
+
+          <Stack direction="row" spacing={1.2} sx={{ mt: 2 }}>
+            <Button variant="outlined" onClick={() => setSelectedId(null)} sx={{ flex: 1 }}>
+              Close
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<PauseCircleRoundedIcon />}
+              onClick={handleSubmitDowntime}
+              sx={{ flex: 1 }}
+              disabled={!dtCategoryCode || !dtReasonCode}
+            >
+              Start Downtime
+            </Button>
+          </Stack>
+
+          {selectedUnit?.id && activeDowntimeMap[selectedUnit.id] ? (
+            <Box sx={{ mt: 1.5, color: "text.secondary", fontSize: 12 }}>
+              This unit is already in downtime. Use Resume from the Active Downtime Board.
+            </Box>
+          ) : null}
+        </Box>
+      </Dialog>
     </Box>
   );
 }

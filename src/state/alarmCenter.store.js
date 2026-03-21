@@ -1,187 +1,111 @@
 // src/state/alarmCenter.store.js
+
 import { useMemo, useSyncExternalStore } from "react";
 import { getPlant3Units } from "../data/mock/plant3.units.mock";
+import { buildAlarmSystemSeed } from "../data/mock/alarmSystem.seed";
+import {
+  DOWNTIME_CATALOG,
+  EVENT_TYPE,
+  PRINTABLE_TYPES,
+  REQUEST_STATUS,
+  DOWNTIME_STATUS,
+  SEVERITY,
+  SOURCE_TYPE,
+} from "./alarmSystem.types";
+import {
+  buildActiveMaps,
+  computeBadgeCount,
+  makeId,
+  normalizeDowntime,
+  normalizeEvent,
+  normalizeRequest,
+  resolveUnitStation,
+  safeISO,
+  severityFromCategoryCode,
+  toLegacyLog,
+} from "./alarmSystem.helpers";
+import {
+  buildShiftSummaries,
+  buildDailySummaries,
+} from "./alarmSystem.rollups";
 
-// Event types for deterministic parsing across pages
-export const EVENT_TYPE = Object.freeze({
-  DT_START: "DT_START",
-  DT_END: "DT_END",
-  ALARM_RAISE: "ALARM_RAISE",
-  ALARM_CLEAR: "ALARM_CLEAR",
-});
-
-// Badge/print policy:
-// We want the sidebar/dashboard number to EXACTLY match what we "print/show" as alarms.
-// So we count only these as "printable alarms":
-const PRINTABLE_TYPES = new Set([EVENT_TYPE.DT_START, EVENT_TYPE.ALARM_RAISE]);
-
-// Demo controls (global):
-// - window.__FS_DEMO_ALARMS__ = false  -> disables demo engine
-// - window.__FS_DEMO_ALARMS__ = true   -> enables demo engine (default true)
+// Demo controls:
+// - window.__FS_DEMO_ALARMS__ = false -> disable demo engine
+// - window.__FS_DEMO_ALARMS__ = true  -> enable demo engine
 const DEFAULT_DEMO_ENABLED = true;
-
-// Demo: alarm hold duration (matches old AlarmsPage behavior)
-const ALARM_HOLD_MS = 10 * 60 * 1000;
-
-// Demo: interval for generating events
 const DEMO_INTERVAL_MS = 40_000;
-
-// Downtime catalog (same as AlarmsPage)
-const DOWNTIME_CATALOG = [
-  {
-    group: "Maintenance",
-    code: "MAINTENANCE",
-    reasons: [
-      { label: "Robot Issue", code: "ROBOT_ISSUE" },
-      { label: "Sensor Issue", code: "SENSOR_ISSUE" },
-      { label: "Vision System Issue", code: "VISION_ISSUE" },
-      { label: "Conveyor Issue", code: "CONVEYOR_ISSUE" },
-      { label: "Torque Gun Issue", code: "TORQUE_GUN_ISSUE" },
-      { label: "Welder Issue", code: "WELDER_ISSUE" },
-    ],
-  },
-  {
-    group: "Meeting",
-    code: "MEETING",
-    reasons: [
-      { label: "Meeting", code: "MEETING" },
-      { label: "Training", code: "TRAINING" },
-      { label: "Safety Issue", code: "SAFETY_ISSUE" },
-      { label: "Break / Lunch", code: "BREAK_LUNCH" },
-    ],
-  },
-  {
-    group: "Quality",
-    code: "QUALITY",
-    reasons: [
-      { label: "Quality Issue", code: "QUALITY_ISSUE" },
-      { label: "Good Part Validation - No Pass", code: "GOOD_PART_VALIDATION_NO_PASS" },
-      { label: "Part Quality Issue", code: "PART_QUALITY_ISSUE" },
-      { label: "Waiting For Quality", code: "WAITING_FOR_QUALITY" },
-    ],
-  },
-  {
-    group: "Process",
-    code: "PROCESS",
-    reasons: [
-      { label: "Running Slow - Sub Pack", code: "RUNNING_SLOW_SUB_PACK" },
-      { label: "Waiting Components", code: "WAITING_COMPONENTS" },
-      { label: "Waiting Parts WIP", code: "WAITING_PARTS_WIP" },
-      { label: "Part Changeover", code: "PART_CHANGEOVER" },
-      { label: "Parts Not In Schedule", code: "PARTS_NOT_IN_SCHEDULE" },
-      { label: "Label Sys Problems", code: "LABEL_SYS_PROBLEMS" },
-    ],
-  },
-];
-
-const SEVERITY = Object.freeze({ LOW: "LOW", MED: "MED", HIGH: "HIGH" });
-
-function makeId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function safeISO(ms) {
-  try {
-    return new Date(ms).toISOString();
-  } catch {
-    return new Date().toISOString();
-  }
-}
-
-function computeBadgeCount(log) {
-  const list = Array.isArray(log) ? log : [];
-  let count = 0;
-  for (const n of list) {
-    if (PRINTABLE_TYPES.has(String(n?.eventType || ""))) count += 1;
-  }
-  return Math.min(count, 999);
-}
-
-// Build "active maps" from the log so UI can work even if AlarmsPage never mounted.
-function buildActiveMapsFromLog(log) {
-  const activeDowntimeMap = {};
-  const activeAlarmMap = {};
-
-  const list = Array.isArray(log) ? log : [];
-  // log is newest-first
-  for (const n of list) {
-    const unitId = n?.unitId;
-    if (!unitId) continue;
-
-    const type = String(n?.eventType || "");
-
-    // Downtime: first occurrence (newest) decides state
-    if (!Object.prototype.hasOwnProperty.call(activeDowntimeMap, unitId)) {
-      if (type === EVENT_TYPE.DT_START) {
-        activeDowntimeMap[unitId] = {
-          startISO: n.tsISO,
-          category: n.category,
-          reason: n.reason,
-        };
-      }
-      if (type === EVENT_TYPE.DT_END) {
-        // ended -> not active, mark as seen
-        activeDowntimeMap[unitId] = null;
-      }
-    }
-
-    // Alarm hold: first occurrence (newest) decides state
-    if (!Object.prototype.hasOwnProperty.call(activeAlarmMap, unitId)) {
-      if (type === EVENT_TYPE.ALARM_RAISE) {
-        activeAlarmMap[unitId] = {
-          tsISO: n.tsISO,
-          severity: n.severity || SEVERITY.LOW,
-          lastAlarmId: n.id,
-        };
-      }
-      if (type === EVENT_TYPE.ALARM_CLEAR) {
-        activeAlarmMap[unitId] = null;
-      }
-    }
-  }
-
-  // Cleanup: remove nulls and expired alarm holds
-  const now = Date.now();
-
-  Object.keys(activeDowntimeMap).forEach((k) => {
-    if (!activeDowntimeMap[k]) delete activeDowntimeMap[k];
-  });
-
-  Object.keys(activeAlarmMap).forEach((k) => {
-    const v = activeAlarmMap[k];
-    if (!v) {
-      delete activeAlarmMap[k];
-      return;
-    }
-    const ts = v.tsISO ? Date.parse(v.tsISO) : NaN;
-    if (!Number.isFinite(ts)) {
-      delete activeAlarmMap[k];
-      return;
-    }
-    if (now - ts > ALARM_HOLD_MS) delete activeAlarmMap[k];
-  });
-
-  return { activeDowntimeMap, activeAlarmMap };
-}
-
 function createStore() {
+  const seed = buildAlarmSystemSeed();
+
   let state = {
-    unread: 0, // badge count = printable alarms count (DT_START + ALARM_RAISE)
-    log: [], // newest first
+    unread: computeBadgeCount(seed.events),
+    log: toLegacyLog(seed.events),
+
+    requests: seed.requests,
+    downtimes: seed.downtimes,
+    events: seed.events,
+
+    summaries: {
+      shift: buildShiftSummaries({
+        requests: seed.requests,
+        downtimes: seed.downtimes,
+      }),
+      daily: buildDailySummaries(
+        buildShiftSummaries({
+          requests: seed.requests,
+          downtimes: seed.downtimes,
+        })
+      ),
+      weekly: [],
+      monthly: [],
+      yearly: [],
+    },
   };
 
   const listeners = new Set();
 
-  // Engine state (module singleton)
   let engineStarted = false;
   let demoTimer = null;
 
   function emit() {
     listeners.forEach((l) => l());
+  }
+
+  function recompute(nextState) {
+    const events = Array.isArray(nextState.events) ? nextState.events : [];
+    const requests = Array.isArray(nextState.requests) ? nextState.requests : [];
+    const downtimes = Array.isArray(nextState.downtimes) ? nextState.downtimes : [];
+
+    const shift = buildShiftSummaries({ requests, downtimes });
+    const daily = buildDailySummaries(shift);
+
+    return {
+      ...nextState,
+      unread: computeBadgeCount(events),
+      log: toLegacyLog(events),
+      summaries: {
+        shift,
+        daily,
+        weekly: nextState?.summaries?.weekly || [],
+        monthly: nextState?.summaries?.monthly || [],
+        yearly: nextState?.summaries?.yearly || [],
+      },
+    };
+  }
+
+  function setState(partialUpdater) {
+    const draft =
+      typeof partialUpdater === "function"
+        ? partialUpdater(state)
+        : { ...state, ...partialUpdater };
+
+    state = recompute(draft);
+    emit();
   }
 
   function getSnapshot() {
@@ -193,45 +117,357 @@ function createStore() {
     return () => listeners.delete(listener);
   }
 
-  function pushAlarm(row) {
-    const nowISO = safeISO(Date.now());
-
-    const normalized = {
-      id: row?.id || makeId(),
-      tsISO: row?.tsISO || nowISO,
-      unitId: row?.unitId || "",
-      unitName: row?.unitName || row?.unitId || "—",
-      severity: row?.severity || SEVERITY.LOW,
-      category: row?.category || "",
-      reason: row?.reason || "",
-      text: row?.text || "",
-      eventType: row?.eventType || "",
-    };
-
-    const nextLog = [normalized, ...state.log].slice(0, 240);
-
-    state = {
-      log: nextLog,
-      unread: computeBadgeCount(nextLog),
-    };
-
-    emit();
+  function getActiveMaps() {
+    return buildActiveMaps({
+      events: state.events,
+      requests: state.requests,
+      downtimes: state.downtimes,
+    });
   }
 
-  // Compatibility API (badge is derived from log)
-  function markAllRead() {
-    // If later you want "clear badge", you can implement a 'seen' mechanism.
-    // For now: no-op to keep consistent with "badge == printable count".
-    emit();
+  function pushEvent(eventInput) {
+    const event = normalizeEvent(eventInput);
+    setState((prev) => ({
+      ...prev,
+      events: [event, ...prev.events].slice(0, 1000),
+    }));
+    return event;
+  }
+
+  // Backward-compatible API used by current pages
+  function pushAlarm(row) {
+    const legacyType = row?.eventType || "";
+
+    if (legacyType === EVENT_TYPE.DT_START || legacyType === EVENT_TYPE.DT_STARTED) {
+      const dt = startDowntime({
+        unitId: row?.unitId,
+        unitName: row?.unitName,
+        stationId: row?.stationId || null,
+        stationName: row?.stationName || null,
+        categoryCode: row?.categoryCode || "PROCESS",
+        categoryLabel: row?.category || "Process",
+        reasonCode: row?.reasonCode || "UNKNOWN",
+        reasonLabel: row?.reason || "Unknown",
+        sourceType: row?.sourceType || SOURCE_TYPE.OPERATOR,
+        startedAt: row?.tsISO || safeISO(Date.now()),
+      });
+      return dt;
+    }
+
+    if (legacyType === EVENT_TYPE.DT_END || legacyType === EVENT_TYPE.DT_ENDED) {
+      return endDowntimeByUnit(row?.unitId, row?.tsISO || safeISO(Date.now()));
+    }
+
+    if (legacyType === EVENT_TYPE.ALARM_RAISE) {
+      return pushEvent({
+        id: row?.id || makeId("EVT"),
+        eventType: EVENT_TYPE.ALARM_RAISE,
+        unitId: row?.unitId || null,
+        unitName: row?.unitName || row?.unitId || "Unknown Unit",
+        stationId: row?.stationId || null,
+        stationName: row?.stationName || null,
+        severity: row?.severity || SEVERITY.LOW,
+        categoryLabel: row?.category || "",
+        reasonLabel: row?.reason || "",
+        sourceType: row?.sourceType || SOURCE_TYPE.SYSTEM,
+        tsISO: row?.tsISO || safeISO(Date.now()),
+        text: row?.text || "",
+      });
+    }
+
+    if (legacyType === EVENT_TYPE.ALARM_CLEAR) {
+      return pushEvent({
+        id: row?.id || makeId("EVT"),
+        eventType: EVENT_TYPE.ALARM_CLEAR,
+        unitId: row?.unitId || null,
+        unitName: row?.unitName || row?.unitId || "Unknown Unit",
+        stationId: row?.stationId || null,
+        stationName: row?.stationName || null,
+        severity: row?.severity || SEVERITY.LOW,
+        categoryLabel: row?.category || "",
+        reasonLabel: row?.reason || "",
+        sourceType: row?.sourceType || SOURCE_TYPE.OPERATOR,
+        tsISO: row?.tsISO || safeISO(Date.now()),
+        text: row?.text || "",
+      });
+    }
+
+    return pushEvent({
+      id: row?.id || makeId("EVT"),
+      eventType: legacyType || EVENT_TYPE.ALARM_RAISE,
+      unitId: row?.unitId || null,
+      unitName: row?.unitName || row?.unitId || "Unknown Unit",
+      stationId: row?.stationId || null,
+      stationName: row?.stationName || null,
+      severity: row?.severity || SEVERITY.LOW,
+      categoryLabel: row?.category || "",
+      reasonLabel: row?.reason || "",
+      sourceType: row?.sourceType || SOURCE_TYPE.SYSTEM,
+      tsISO: row?.tsISO || safeISO(Date.now()),
+      text: row?.text || "",
+    });
+  }
+
+  function createRequest(payload = {}) {
+    const request = normalizeRequest(payload);
+
+    setState((prev) => ({
+      ...prev,
+      requests: [request, ...prev.requests],
+      events: [
+        normalizeEvent({
+          eventType: EVENT_TYPE.REQUEST_CREATED,
+          requestId: request.id,
+          unitId: request.unitId,
+          unitName: request.unitName,
+          cellId: request.cellId,
+          stationId: request.stationId,
+          stationName: request.stationName,
+          subject: request.subject,
+          description: request.description,
+          actor: request.requestedBy,
+          sourceType: request.sourceType,
+          severity: SEVERITY.MED,
+          tsISO: request.requestedAt,
+          text: `Request created — ${request.subject || "No Subject"}`,
+        }),
+        ...prev.events,
+      ].slice(0, 1000),
+    }));
+
+    return request;
+  }
+
+  function acknowledgeRequest(requestId, actor = "teamlead") {
+    const nowISO = safeISO(Date.now());
+    let updatedRequest = null;
+
+    setState((prev) => {
+      const nextRequests = prev.requests.map((req) => {
+        if (req.id !== requestId) return req;
+        updatedRequest = {
+          ...req,
+          status: REQUEST_STATUS.ACKNOWLEDGED,
+          acknowledgedAt: nowISO,
+          acknowledgedBy: actor,
+        };
+        return updatedRequest;
+      });
+
+      if (!updatedRequest) return prev;
+
+      return {
+        ...prev,
+        requests: nextRequests,
+        events: [
+          normalizeEvent({
+            eventType: EVENT_TYPE.REQUEST_ACKNOWLEDGED,
+            requestId: updatedRequest.id,
+            unitId: updatedRequest.unitId,
+            unitName: updatedRequest.unitName,
+            cellId: updatedRequest.cellId,
+            stationId: updatedRequest.stationId,
+            stationName: updatedRequest.stationName,
+            subject: updatedRequest.subject,
+            description: updatedRequest.description,
+            actor,
+            sourceType: SOURCE_TYPE.TEAM_LEAD,
+            severity: SEVERITY.MED,
+            tsISO: nowISO,
+            text: `Request acknowledged — ${updatedRequest.subject || "No Subject"}`,
+          }),
+          ...prev.events,
+        ].slice(0, 1000),
+      };
+    });
+
+    return updatedRequest;
+  }
+
+  function closeRequest(requestId, actor = "maintenance") {
+    const nowISO = safeISO(Date.now());
+    let updatedRequest = null;
+
+    setState((prev) => {
+      const nextRequests = prev.requests.map((req) => {
+        if (req.id !== requestId) return req;
+        updatedRequest = {
+          ...req,
+          status: REQUEST_STATUS.CLOSED,
+          closedAt: nowISO,
+          closedBy: actor,
+        };
+        return updatedRequest;
+      });
+
+      if (!updatedRequest) return prev;
+
+      return {
+        ...prev,
+        requests: nextRequests,
+        events: [
+          normalizeEvent({
+            eventType: EVENT_TYPE.REQUEST_CLOSED,
+            requestId: updatedRequest.id,
+            unitId: updatedRequest.unitId,
+            unitName: updatedRequest.unitName,
+            cellId: updatedRequest.cellId,
+            stationId: updatedRequest.stationId,
+            stationName: updatedRequest.stationName,
+            subject: updatedRequest.subject,
+            description: updatedRequest.description,
+            actor,
+            sourceType: SOURCE_TYPE.MAINTENANCE,
+            severity: SEVERITY.LOW,
+            tsISO: nowISO,
+            text: `Request closed — ${updatedRequest.subject || "No Subject"}`,
+          }),
+          ...prev.events,
+        ].slice(0, 1000),
+      };
+    });
+
+    return updatedRequest;
+  }
+
+  function startDowntime(payload = {}) {
+    const downtime = normalizeDowntime(payload);
+
+    setState((prev) => {
+      const nextRequests = prev.requests.map((req) => {
+        if (req.id !== downtime.sourceRequestId) return req;
+        return {
+          ...req,
+          status: REQUEST_STATUS.LINKED,
+          linkedDowntimeId: downtime.id,
+        };
+      });
+
+      const linkEvent = downtime.sourceRequestId
+        ? normalizeEvent({
+            eventType: EVENT_TYPE.REQUEST_LINKED_TO_DOWNTIME,
+            requestId: downtime.sourceRequestId,
+            downtimeId: downtime.id,
+            unitId: downtime.unitId,
+            unitName: downtime.unitName,
+            cellId: downtime.cellId,
+            stationId: downtime.stationId,
+            stationName: downtime.stationName,
+            actor: "system",
+            sourceType: SOURCE_TYPE.SYSTEM,
+            severity: severityFromCategoryCode(downtime.categoryCode),
+            categoryCode: downtime.categoryCode,
+            categoryLabel: downtime.categoryLabel,
+            reasonCode: downtime.reasonCode,
+            reasonLabel: downtime.reasonLabel,
+            tsISO: downtime.startedAt,
+            text: `Request linked to downtime — ${downtime.categoryLabel}: ${downtime.reasonLabel}`,
+          })
+        : null;
+
+      return {
+        ...prev,
+        requests: nextRequests,
+        downtimes: [downtime, ...prev.downtimes],
+        events: [
+          normalizeEvent({
+            eventType: EVENT_TYPE.DT_STARTED,
+            downtimeId: downtime.id,
+            requestId: downtime.sourceRequestId,
+            unitId: downtime.unitId,
+            unitName: downtime.unitName,
+            cellId: downtime.cellId,
+            stationId: downtime.stationId,
+            stationName: downtime.stationName,
+            actor: payload?.actor || "operator",
+            sourceType: downtime.sourceType,
+            severity: severityFromCategoryCode(downtime.categoryCode),
+            categoryCode: downtime.categoryCode,
+            categoryLabel: downtime.categoryLabel,
+            reasonCode: downtime.reasonCode,
+            reasonLabel: downtime.reasonLabel,
+            tsISO: downtime.startedAt,
+            text: `Downtime started — ${downtime.categoryLabel}: ${downtime.reasonLabel}`,
+          }),
+          ...(linkEvent ? [linkEvent] : []),
+          ...prev.events,
+        ].slice(0, 1000),
+      };
+    });
+
+    return downtime;
+  }
+
+  function endDowntime(downtimeId, endedAt = safeISO(Date.now())) {
+    let closedDowntime = null;
+
+    setState((prev) => {
+      const nextDowntimes = prev.downtimes.map((dt) => {
+        if (dt.id !== downtimeId) return dt;
+        closedDowntime = {
+          ...dt,
+          status: DOWNTIME_STATUS.CLOSED,
+          endedAt,
+          durationMin: Math.max(
+            0,
+            Math.round((Date.parse(endedAt) - Date.parse(dt.startedAt || endedAt)) / 60000)
+          ),
+        };
+        return closedDowntime;
+      });
+
+      if (!closedDowntime) return prev;
+
+      return {
+        ...prev,
+        downtimes: nextDowntimes,
+        events: [
+          normalizeEvent({
+            eventType: EVENT_TYPE.DT_ENDED,
+            downtimeId: closedDowntime.id,
+            requestId: closedDowntime.sourceRequestId,
+            unitId: closedDowntime.unitId,
+            unitName: closedDowntime.unitName,
+            cellId: closedDowntime.cellId,
+            stationId: closedDowntime.stationId,
+            stationName: closedDowntime.stationName,
+            actor: "operator",
+            sourceType: closedDowntime.sourceType,
+            severity: severityFromCategoryCode(closedDowntime.categoryCode),
+            categoryCode: closedDowntime.categoryCode,
+            categoryLabel: closedDowntime.categoryLabel,
+            reasonCode: closedDowntime.reasonCode,
+            reasonLabel: closedDowntime.reasonLabel,
+            tsISO: endedAt,
+            text: `Downtime ended — ${closedDowntime.categoryLabel}: ${closedDowntime.reasonLabel}`,
+          }),
+          ...prev.events,
+        ].slice(0, 1000),
+      };
+    });
+
+    return closedDowntime;
+  }
+
+  function endDowntimeByUnit(unitId, endedAt = safeISO(Date.now())) {
+    const active = [...state.downtimes].find(
+      (dt) => dt.unitId === unitId && dt.status === DOWNTIME_STATUS.ACTIVE
+    );
+    if (!active) return null;
+    return endDowntime(active.id, endedAt);
   }
 
   function clearAll() {
-    state = { unread: 0, log: [] };
-    emit();
+    setState((prev) => ({
+      ...prev,
+      requests: [],
+      downtimes: [],
+      events: [],
+    }));
   }
 
-  function getActiveMaps() {
-    return buildActiveMapsFromLog(state.log);
+  function markAllRead() {
+    emit();
   }
 
   function stopDemoEngine() {
@@ -242,8 +478,7 @@ function createStore() {
   }
 
   function startDemoEngine() {
-    if (demoTimer) return;
-    if (typeof window === "undefined") return;
+    if (demoTimer || typeof window === "undefined") return;
 
     const units = getPlant3Units();
     if (!units?.length) return;
@@ -255,45 +490,69 @@ function createStore() {
       const unit = pickRandom(units);
       const cat = pickRandom(DOWNTIME_CATALOG);
       const reason = pickRandom(cat.reasons);
+      const activeMaps = getActiveMaps();
 
-      const maps = getActiveMaps();
-      const isDowntime = Math.random() < 0.45;
+      const shouldCreateRequest = Math.random() < 0.6;
+      const shouldCreateDowntime = Math.random() < 0.42;
 
-      if (isDowntime) {
-        if (!maps.activeDowntimeMap[unit.id]) {
-          const tsISO = safeISO(Date.now());
-          const sev =
-            cat.code === "MAINTENANCE" ? SEVERITY.HIGH : cat.code === "QUALITY" ? SEVERITY.MED : SEVERITY.LOW;
+      const meta = resolveUnitStation(unit);
 
-          pushAlarm({
-            id: makeId(),
-            tsISO,
-            unitId: unit.id,
-            unitName: unit.name,
-            severity: sev,
-            category: cat.group,
-            reason: reason.label,
-            text: `Downtime — ${cat.group}: ${reason.label}`,
-            eventType: EVENT_TYPE.DT_START,
-          });
-          return;
-        }
+      if (shouldCreateRequest) {
+        createRequest({
+          unitId: meta.unitId,
+          unitName: meta.unitName,
+          cellId: meta.cellId,
+          stationId: meta.stationId,
+          stationName: meta.stationName,
+          subject: reason.label,
+          description: `${reason.label} submitted by operator`,
+          sourceType: SOURCE_TYPE.OPERATOR,
+          requestedBy: "demo-operator",
+          priority: cat.code === "MAINTENANCE" ? "HIGH" : "MED",
+        });
       }
 
-      const tsISO = safeISO(Date.now());
-      const sev = cat.code === "MAINTENANCE" ? SEVERITY.HIGH : cat.code === "QUALITY" ? SEVERITY.MED : SEVERITY.LOW;
+      if (shouldCreateDowntime && !activeMaps.activeDowntimeMap[unit.id]) {
+        const openReq = state.requests.find(
+          (req) =>
+            req.unitId === unit.id &&
+            [REQUEST_STATUS.OPEN, REQUEST_STATUS.ACKNOWLEDGED].includes(req.status)
+        );
 
-      pushAlarm({
-        id: makeId(),
-        tsISO,
-        unitId: unit.id,
-        unitName: unit.name,
-        severity: sev,
-        category: cat.group,
-        reason: reason.label,
-        text: `Live Alarm — ${cat.group}: ${reason.label}`,
-        eventType: EVENT_TYPE.ALARM_RAISE,
-      });
+        startDowntime({
+          unitId: meta.unitId,
+          unitName: meta.unitName,
+          cellId: meta.cellId,
+          stationId: meta.stationId,
+          stationName: meta.stationName,
+          sourceRequestId: openReq?.id || null,
+          sourceType: SOURCE_TYPE.OPERATOR,
+          categoryCode: cat.code,
+          categoryLabel: cat.group,
+          reasonCode: reason.code,
+          reasonLabel: reason.label,
+          startedAt: safeISO(Date.now()),
+        });
+        return;
+      }
+
+      if (!activeMaps.activeAlarmMap[unit.id]) {
+        pushEvent({
+          eventType: EVENT_TYPE.ALARM_RAISE,
+          unitId: unit.id,
+          unitName: unit.name,
+          stationId: meta.stationId,
+          stationName: meta.stationName,
+          severity: severityFromCategoryCode(cat.code),
+          categoryCode: cat.code,
+          categoryLabel: cat.group,
+          reasonCode: reason.code,
+          reasonLabel: reason.label,
+          sourceType: SOURCE_TYPE.SYSTEM,
+          tsISO: safeISO(Date.now()),
+          text: `Live alarm — ${cat.group}: ${reason.label}`,
+        });
+      }
     }, DEMO_INTERVAL_MS);
   }
 
@@ -308,8 +567,6 @@ function createStore() {
     }
   }
 
-  // Auto-start engine as soon as store module is imported.
-  // This makes dashboard/sidebar badge work even if AlarmsPage is never opened.
   if (typeof window !== "undefined") {
     setTimeout(() => {
       try {
@@ -323,28 +580,62 @@ function createStore() {
   return {
     subscribe,
     getSnapshot,
+
     pushAlarm,
+    pushEvent,
+
+    createRequest,
+    acknowledgeRequest,
+    closeRequest,
+
+    startDowntime,
+    endDowntime,
+    endDowntimeByUnit,
+
     markAllRead,
     clearAll,
+
+    getActiveMaps,
     startEngine,
     stopDemoEngine,
-    getActiveMaps,
   };
 }
 
 export const alarmCenterStore = createStore();
 
+// Backward-compatible exports
+export { EVENT_TYPE, PRINTABLE_TYPES, SEVERITY, SOURCE_TYPE };
+
 export function useAlarmCenter() {
-  const snap = useSyncExternalStore(alarmCenterStore.subscribe, alarmCenterStore.getSnapshot);
+  const snap = useSyncExternalStore(
+    alarmCenterStore.subscribe,
+    alarmCenterStore.getSnapshot
+  );
 
   return useMemo(
     () => ({
       unread: snap.unread,
       log: snap.log,
+
+      requests: snap.requests,
+      downtimes: snap.downtimes,
+      events: snap.events,
+      summaries: snap.summaries,
+
       pushAlarm: alarmCenterStore.pushAlarm,
+      pushEvent: alarmCenterStore.pushEvent,
+
+      createRequest: alarmCenterStore.createRequest,
+      acknowledgeRequest: alarmCenterStore.acknowledgeRequest,
+      closeRequest: alarmCenterStore.closeRequest,
+
+      startDowntime: alarmCenterStore.startDowntime,
+      endDowntime: alarmCenterStore.endDowntime,
+      endDowntimeByUnit: alarmCenterStore.endDowntimeByUnit,
+
       markAllRead: alarmCenterStore.markAllRead,
       clearAll: alarmCenterStore.clearAll,
-      // helpers
+
       getActiveMaps: alarmCenterStore.getActiveMaps,
       startEngine: alarmCenterStore.startEngine,
       stopDemoEngine: alarmCenterStore.stopDemoEngine,

@@ -27,19 +27,22 @@ import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
+import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
+import EngineeringRoundedIcon from "@mui/icons-material/EngineeringRounded";
+import VerifiedRoundedIcon from "@mui/icons-material/VerifiedRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid, Billboard, Text } from "@react-three/drei";
 
 import { getPlant3Units } from "../data/mock/plant3.units.mock";
 import { useAlarmCenter, EVENT_TYPE } from "../state/alarmCenter.store";
-import { postDowntimeStart, postDowntimeEnd } from "../services/alarms.api";
 
 const LAYOUT_SPREAD = 1.34;
 
 const PAGE = {
   bg: "#0b0f14",
-  frame: "rgba(255,255,255,0.04)",
   panel: "#111826",
   panel2: "#0f1623",
   border: "rgba(255,255,255,0.10)",
@@ -48,22 +51,127 @@ const PAGE = {
   subtext: "rgba(255,255,255,0.65)",
   muted: "rgba(255,255,255,0.52)",
   accent: "rgba(56,189,248,0.95)",
+  success: "#22c55e",
+  warn: "#f59e0b",
+  danger: "#ef4444",
+  purple: "#a855f7",
+  info: "#38bdf8",
 };
 
 const SEVERITY = { LOW: "LOW", MED: "MED", HIGH: "HIGH" };
+
+const SOURCE_TYPE = {
+  SYSTEM: "SYSTEM",
+  OPERATOR: "OPERATOR",
+  TEAM_LEAD: "TEAM_LEAD",
+};
+
+const SCOPE_TYPE = {
+  UNIT: "UNIT",
+  STATION: "STATION",
+};
 
 const COLOR_GREEN = "#22c55e";
 const COLOR_RED = "#ef4444";
 const COLOR_YELLOW = "#f59e0b";
 
 const ALARM_HOLD_MS = 10 * 60 * 1000;
+const LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-// ✅ History/Print policy:
-// Show ONLY these (Resume must NOT be printed/shown)
-const PRINTABLE_TYPES = new Set([EVENT_TYPE.DT_START, EVENT_TYPE.ALARM_RAISE]);
+const COLORS = [
+  "#38bdf8",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#a855f7",
+  "#14b8a6",
+  "#f97316",
+  "#64748b",
+];
+
+const ALARM_TYPE_CATALOG = [
+  {
+    code: "SUPERVISOR",
+    label: "Supervisor",
+    severity: SEVERITY.MED,
+    subjects: [
+      "Team Lead Support",
+      "Production Decision",
+      "Escalation Needed",
+      "Operator Assistance",
+      "Shift Coordination",
+    ],
+  },
+  {
+    code: "MAINTENANCE",
+    label: "Maintenance",
+    severity: SEVERITY.HIGH,
+    subjects: [
+      "Robot Issue",
+      "Sensor Issue",
+      "Vision System Issue",
+      "Conveyor Issue",
+      "Welder Issue",
+      "Torque Gun Issue",
+      "Fixture Issue",
+    ],
+  },
+  {
+    code: "QUALITY",
+    label: "Quality",
+    severity: SEVERITY.MED,
+    subjects: [
+      "Quality Check Needed",
+      "Suspect / Defect Review",
+      "Part Quality Issue",
+      "Validation Support",
+      "Containment Request",
+    ],
+  },
+  {
+    code: "MATERIAL",
+    label: "Material",
+    severity: SEVERITY.LOW,
+    subjects: [
+      "Waiting Components",
+      "Container Needed",
+      "Part Shortage",
+      "Label / Packaging Support",
+      "Inventory Check",
+    ],
+  },
+];
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
+}
+
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function formatNumber(n) {
+  const value = Number(n || 0);
+  return Number.isFinite(value) ? value.toLocaleString() : "0";
+}
+
+function formatMinutes(n) {
+  return `${formatNumber(Math.round(Number(n || 0)))} min`;
+}
+
+function formatTs(tsISO) {
+  if (!tsISO) return "—";
+  try {
+    return new Date(tsISO).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
+function compactLabel(text, max = 14) {
+  const value = String(text || "—");
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
 }
 
 function baseLineColor(status) {
@@ -76,8 +184,11 @@ function severityChipColor(sev) {
   return "default";
 }
 
-function makeId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function pickToneByCount(n) {
+  if (n <= 2) return "success";
+  if (n <= 5) return "accent";
+  if (n <= 9) return "warn";
+  return "danger";
 }
 
 function pickPreferredVoice(voices, lang) {
@@ -127,107 +238,1072 @@ function safeSpeak(text, enabled, opts = {}) {
   }
 }
 
-const DOWNTIME_CATALOG = [
-  {
-    group: "Maintenance",
-    code: "MAINTENANCE",
-    reasons: [
-      { label: "Robot Issue", code: "ROBOT_ISSUE" },
-      { label: "Sensor Issue", code: "SENSOR_ISSUE" },
-      { label: "Vision System Issue", code: "VISION_ISSUE" },
-      { label: "Conveyor Issue", code: "CONVEYOR_ISSUE" },
-      { label: "Torque Gun Issue", code: "TORQUE_GUN_ISSUE" },
-      { label: "Welder Issue", code: "WELDER_ISSUE" },
-    ],
-  },
-  {
-    group: "Meeting",
-    code: "MEETING",
-    reasons: [
-      { label: "Meeting", code: "MEETING" },
-      { label: "Training", code: "TRAINING" },
-      { label: "Safety Issue", code: "SAFETY_ISSUE" },
-      { label: "Break / Lunch", code: "BREAK_LUNCH" },
-    ],
-  },
-  {
-    group: "Quality",
-    code: "QUALITY",
-    reasons: [
-      { label: "Quality Issue", code: "QUALITY_ISSUE" },
-      { label: "Good Part Validation - No Pass", code: "GOOD_PART_VALIDATION_NO_PASS" },
-      { label: "Part Quality Issue", code: "PART_QUALITY_ISSUE" },
-      { label: "Waiting For Quality", code: "WAITING_FOR_QUALITY" },
-    ],
-  },
-  {
-    group: "Process",
-    code: "PROCESS",
-    reasons: [
-      { label: "Running Slow - Sub Pack", code: "RUNNING_SLOW_SUB_PACK" },
-      { label: "Waiting Components", code: "WAITING_COMPONENTS" },
-      { label: "Waiting Parts WIP", code: "WAITING_PARTS_WIP" },
-      { label: "Part Changeover", code: "PART_CHANGEOVER" },
-      { label: "Parts Not In Schedule", code: "PARTS_NOT_IN_SCHEDULE" },
-      { label: "Label Sys Problems", code: "LABEL_SYS_PROBLEMS" },
-    ],
-  },
-];
+function getTorontoDateParts(tsISO = new Date().toISOString()) {
+  const d = new Date(tsISO);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
 
-/**
- * Derive active downtime + alarm holds from log.
- * - Downtime: active if latest DT event is DT_START (no later DT_END)
- * - Alarm: active if latest alarm event is ALARM_RAISE within hold window (and no later ALARM_CLEAR)
- */
-function deriveActiveMapsFromLog(log) {
-  const activeDowntimeMap = {};
-  const activeAlarmMap = {};
-  const now = Date.now();
-
-  const list = Array.isArray(log) ? log : []; // newest-first
-  for (const n of list) {
-    const unitId = n?.unitId;
-    if (!unitId) continue;
-
-    const type = n?.eventType || "";
-    const ts = n?.tsISO ? Date.parse(n.tsISO) : NaN;
-
-    if (!Object.prototype.hasOwnProperty.call(activeDowntimeMap, unitId)) {
-      if (type === EVENT_TYPE.DT_START) {
-        activeDowntimeMap[unitId] = {
-          startISO: n.tsISO,
-          categoryLabel: n.category,
-          reasonLabel: n.reason,
-        };
-      } else if (type === EVENT_TYPE.DT_END) {
-        activeDowntimeMap[unitId] = null;
-      }
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(activeAlarmMap, unitId)) {
-      if (type === EVENT_TYPE.ALARM_RAISE) {
-        if (Number.isFinite(ts) && now - ts <= ALARM_HOLD_MS) {
-          activeAlarmMap[unitId] = { tsISO: n.tsISO, lastAlarmId: n.id, severity: n.severity || SEVERITY.LOW };
-        } else {
-          activeAlarmMap[unitId] = null;
-        }
-      } else if (type === EVENT_TYPE.ALARM_CLEAR) {
-        activeAlarmMap[unitId] = null;
-      }
-    }
-  }
-
-  Object.keys(activeDowntimeMap).forEach((k) => {
-    if (!activeDowntimeMap[k]) delete activeDowntimeMap[k];
-  });
-  Object.keys(activeAlarmMap).forEach((k) => {
-    if (!activeAlarmMap[k]) delete activeAlarmMap[k];
+  const map = {};
+  parts.forEach((p) => {
+    if (p.type !== "literal") map[p.type] = p.value;
   });
 
-  return { activeDowntimeMap, activeAlarmMap };
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    second: Number(map.second),
+  };
 }
 
-/* ---------- 3D Label ---------- */
+function getShiftMeta(tsISO = new Date().toISOString()) {
+  const p = getTorontoDateParts(tsISO);
+  const minutes = p.hour * 60 + p.minute;
+
+  let shiftKey = "C";
+  if (minutes >= 360 && minutes < 840) shiftKey = "A";
+  else if (minutes >= 840 && minutes < 1320) shiftKey = "B";
+
+  let businessDate = `${String(p.year).padStart(4, "0")}-${String(p.month).padStart(2, "0")}-${String(
+    p.day
+  ).padStart(2, "0")}`;
+
+  if (minutes < 360) {
+    const noonUtc = new Date(`${businessDate}T12:00:00Z`);
+    noonUtc.setUTCDate(noonUtc.getUTCDate() - 1);
+    businessDate = noonUtc.toISOString().slice(0, 10);
+  }
+
+  return { shiftKey, businessDate };
+}
+
+function formatDurationMs(ms) {
+  const safe = Math.max(0, Number(ms) || 0);
+  const totalSec = Math.floor(safe / 1000);
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  const ss = totalSec % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+function pruneLiveLog(list) {
+  const now = Date.now();
+  return (Array.isArray(list) ? list : []).filter((n) => {
+    const ts = n?.tsISO ? Date.parse(n.tsISO) : NaN;
+    return Number.isFinite(ts) && now - ts <= LIVE_RETENTION_MS;
+  });
+}
+
+function resolveUnitStation(unit) {
+  if (!unit) {
+    return {
+      scopeType: SCOPE_TYPE.UNIT,
+      stationId: null,
+      stationName: null,
+    };
+  }
+
+  if (unit.activeStationId || unit.activeStationName) {
+    return {
+      scopeType: SCOPE_TYPE.STATION,
+      stationId: unit.activeStationId || null,
+      stationName: unit.activeStationName || null,
+    };
+  }
+
+  return {
+    scopeType: SCOPE_TYPE.UNIT,
+    stationId: null,
+    stationName: null,
+  };
+}
+
+function buildEventPayload({
+  unit,
+  tsISO,
+  eventType,
+  severity,
+  category,
+  categoryCode,
+  reason,
+  reasonCode,
+  text,
+  sourceType = SOURCE_TYPE.OPERATOR,
+  linkedEventId = null,
+}) {
+  const { shiftKey, businessDate } = getShiftMeta(tsISO);
+  const stationMeta = resolveUnitStation(unit);
+
+  return {
+    id: makeId(),
+    tsISO,
+    businessDate,
+    shiftKey,
+    eventType,
+    sourceType,
+    scopeType: stationMeta.scopeType,
+    unitId: unit?.id || null,
+    unitName: unit?.name || "Unknown Unit",
+    stationId: stationMeta.stationId,
+    stationName: stationMeta.stationName,
+    severity,
+    category,
+    categoryCode,
+    reason,
+    reasonCode,
+    text,
+    linkedEventId,
+  };
+}
+
+function deriveAlarmState(log) {
+  const liveLog = pruneLiveLog(log);
+  const asc = [...liveLog].sort((a, b) => Date.parse(a.tsISO || 0) - Date.parse(b.tsISO || 0));
+  const now = Date.now();
+
+  const activeAlarmMap = {};
+  const openAlarmStartMap = {};
+  const sessions = [];
+
+  asc.forEach((n) => {
+    const unitId = n?.unitId;
+    if (!unitId) return;
+
+    const type = String(n.eventType || "");
+    const ts = n?.tsISO ? Date.parse(n.tsISO) : NaN;
+
+    if (type === EVENT_TYPE.ALARM_RAISE) {
+      if (Number.isFinite(ts) && now - ts <= ALARM_HOLD_MS) {
+        activeAlarmMap[unitId] = {
+          tsISO: n.tsISO,
+          severity: n.severity || SEVERITY.LOW,
+          stationId: n.stationId || null,
+          stationName: n.stationName || null,
+          startEventId: n.id,
+          category: n.category || "Alarm",
+          reason: n.reason || "—",
+        };
+      }
+      openAlarmStartMap[unitId] = n;
+      return;
+    }
+
+    if (type === EVENT_TYPE.ALARM_CLEAR) {
+      const startEvent = openAlarmStartMap[unitId] || null;
+      const durationMs =
+        startEvent?.tsISO && n?.tsISO ? Math.max(0, Date.parse(n.tsISO) - Date.parse(startEvent.tsISO)) : 0;
+
+      sessions.push({
+        id: n.id || `alarm-clear-${unitId}`,
+        kind: "ALARM",
+        status: "CLOSED",
+        unitId,
+        unitName: n.unitName || startEvent?.unitName || "—",
+        stationId: n.stationId || startEvent?.stationId || null,
+        stationName: n.stationName || startEvent?.stationName || null,
+        severity: startEvent?.severity || n.severity || SEVERITY.LOW,
+        category: startEvent?.category || n.category || "Alarm",
+        reason: startEvent?.reason || n.reason || "—",
+        startISO: startEvent?.tsISO || null,
+        endISO: n.tsISO || null,
+        durationMs,
+        durationLabel: formatDurationMs(durationMs),
+        businessDate: startEvent?.businessDate || n.businessDate || null,
+        shiftKey: startEvent?.shiftKey || n.shiftKey || null,
+        sourceType: startEvent?.sourceType || n.sourceType || SOURCE_TYPE.SYSTEM,
+        text: startEvent?.text || n.text || "",
+      });
+
+      delete activeAlarmMap[unitId];
+      delete openAlarmStartMap[unitId];
+    }
+  });
+
+  Object.values(openAlarmStartMap).forEach((n) => {
+    const ts = n?.tsISO ? Date.parse(n.tsISO) : NaN;
+    if (!Number.isFinite(ts) || now - ts > ALARM_HOLD_MS) return;
+
+    const durationMs = Math.max(0, now - ts);
+    sessions.push({
+      id: `open-alarm-${n.id}`,
+      kind: "ALARM",
+      status: "ACTIVE",
+      unitId: n.unitId,
+      unitName: n.unitName || "—",
+      stationId: n.stationId || null,
+      stationName: n.stationName || null,
+      severity: n.severity || SEVERITY.LOW,
+      category: n.category || "Alarm",
+      reason: n.reason || "—",
+      startISO: n.tsISO || null,
+      endISO: null,
+      durationMs,
+      durationLabel: formatDurationMs(durationMs),
+      businessDate: n.businessDate || null,
+      shiftKey: n.shiftKey || null,
+      sourceType: n.sourceType || SOURCE_TYPE.SYSTEM,
+      text: n.text || "",
+    });
+  });
+
+  sessions.sort((a, b) => Date.parse(b.startISO || 0) - Date.parse(a.startISO || 0));
+
+  return {
+    liveLog,
+    activeAlarmMap,
+    openAlarmStartMap,
+    sessionHistory: sessions,
+  };
+}
+
+function buildMixByField(list, field, limit = 8) {
+  const map = {};
+  (list || []).forEach((item) => {
+    const key = item?.[field] || "—";
+    map[key] = (map[key] || 0) + 1;
+  });
+
+  return Object.entries(map)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+}
+
+function buildUnitComparisonRows(list) {
+  const map = {};
+  (list || []).forEach((item) => {
+    const unitId = item?.unitId || "UNKNOWN";
+    if (!map[unitId]) {
+      map[unitId] = {
+        id: unitId,
+        label: item?.unitName || unitId,
+        count: 0,
+        activeCount: 0,
+        totalMinutes: 0,
+      };
+    }
+    map[unitId].count += 1;
+    map[unitId].totalMinutes += Math.round(Number(item?.durationMs || 0) / 60000);
+    if (item.status === "ACTIVE") map[unitId].activeCount += 1;
+  });
+
+  return Object.values(map)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12)
+    .map((row) => ({
+      ...row,
+      shortLabel: compactLabel(row.label, 13),
+    }));
+}
+
+function buildHourlyTrend(sessionHistory) {
+  const buckets = Array.from({ length: 12 }, (_, idx) => {
+    const end = Date.now() - (11 - idx) * 60 * 60 * 1000;
+    const labelDate = new Date(end);
+    const hh = String(labelDate.getHours()).padStart(2, "0");
+    return {
+      label: `${hh}:00`,
+      start: end,
+      end: end + 60 * 60 * 1000,
+      count: 0,
+    };
+  });
+
+  (sessionHistory || []).forEach((item) => {
+    const ts = item?.startISO ? Date.parse(item.startISO) : NaN;
+    if (!Number.isFinite(ts)) return;
+    const bucket = buckets.find((b) => ts >= b.start && ts < b.end);
+    if (bucket) bucket.count += 1;
+  });
+
+  return buckets.map(({ label, count }) => ({ label, value: count }));
+}
+
+function buildAlarmAnalytics(sessionHistory, activeAlarmMap, liveLog) {
+  const alarmSessions = (sessionHistory || []).filter((n) => n.kind === "ALARM");
+  const activeAlarms = alarmSessions.filter((n) => n.status === "ACTIVE");
+  const closedAlarms = alarmSessions.filter((n) => n.status === "CLOSED");
+
+  const byReason = buildMixByField(alarmSessions, "reason", 8);
+  const byCategory = buildMixByField(alarmSessions, "category", 8);
+  const bySeverity = buildMixByField(alarmSessions, "severity", 6);
+  const byUnit = buildUnitComparisonRows(alarmSessions);
+  const hourlyTrend = buildHourlyTrend(alarmSessions);
+
+  const repeatedHotspots = byReason.filter((item) => Number(item.value || 0) >= 2).slice(0, 6);
+
+  const avgAlarmMin = closedAlarms.length
+    ? closedAlarms.reduce((sum, item) => sum + Number(item.durationMs || 0), 0) / closedAlarms.length / 60000
+    : 0;
+
+  const topActive = [...activeAlarms].sort((a, b) => Number(b.durationMs || 0) - Number(a.durationMs || 0))[0] || null;
+  const latestLive = liveLog?.[0] || null;
+
+  return {
+    total: alarmSessions.length,
+    active: activeAlarms.length || Object.keys(activeAlarmMap || {}).length,
+    closed: closedAlarms.length,
+    avgAlarmMin,
+    byReason,
+    byCategory,
+    bySeverity,
+    byUnit,
+    hourlyTrend,
+    repeatedHotspots,
+    topActive,
+    latestLive,
+  };
+}
+
+function SectionGrid({ children, min = 320, gap = 12 }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`,
+        gap,
+        alignItems: "start",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Card({ title, subtitle, children, right, tone = "default" }) {
+  const toneMap = {
+    default: {
+      border: PAGE.border,
+      bg: PAGE.panel,
+      header: "rgba(255,255,255,0.02)",
+    },
+    accent: {
+      border: "rgba(56,189,248,0.18)",
+      bg: "rgba(56,189,248,0.05)",
+      header: "rgba(56,189,248,0.08)",
+    },
+    success: {
+      border: "rgba(34,197,94,0.18)",
+      bg: "rgba(34,197,94,0.05)",
+      header: "rgba(34,197,94,0.08)",
+    },
+    warn: {
+      border: "rgba(245,158,11,0.18)",
+      bg: "rgba(245,158,11,0.05)",
+      header: "rgba(245,158,11,0.08)",
+    },
+    danger: {
+      border: "rgba(239,68,68,0.18)",
+      bg: "rgba(239,68,68,0.05)",
+      header: "rgba(239,68,68,0.08)",
+    },
+  };
+
+  const skin = toneMap[tone] || toneMap.default;
+
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        width: "100%",
+        border: `1px solid ${skin.border}`,
+        background: skin.bg,
+        borderRadius: 18,
+        overflow: "hidden",
+        height: "100%",
+      }}
+    >
+      <div
+        style={{
+          padding: "13px 15px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          borderBottom: `1px solid ${PAGE.border}`,
+          background: skin.header,
+        }}
+      >
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              color: PAGE.text,
+              fontWeight: 900,
+              lineHeight: 1.2,
+              whiteSpace: "normal",
+              wordBreak: "normal",
+              overflowWrap: "break-word",
+            }}
+          >
+            {title}
+          </div>
+          {subtitle ? (
+            <div
+              style={{
+                color: PAGE.subtext,
+                fontSize: 12,
+                marginTop: 4,
+                lineHeight: 1.35,
+                whiteSpace: "normal",
+                wordBreak: "normal",
+                overflowWrap: "break-word",
+              }}
+            >
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
+
+        {right ? (
+          <div
+            style={{
+              minWidth: 0,
+              maxWidth: "100%",
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              gap: 8,
+            }}
+          >
+            {right}
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ padding: 14, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, subvalue, tone = "default" }) {
+  const toneMap = {
+    default: {
+      border: PAGE.border,
+      bg: "rgba(255,255,255,0.03)",
+    },
+    accent: {
+      border: "rgba(56,189,248,0.28)",
+      bg: "rgba(56,189,248,0.08)",
+    },
+    success: {
+      border: "rgba(34,197,94,0.28)",
+      bg: "rgba(34,197,94,0.08)",
+    },
+    warn: {
+      border: "rgba(245,158,11,0.28)",
+      bg: "rgba(245,158,11,0.08)",
+    },
+    danger: {
+      border: "rgba(239,68,68,0.28)",
+      bg: "rgba(239,68,68,0.08)",
+    },
+    purple: {
+      border: "rgba(168,85,247,0.28)",
+      bg: "rgba(168,85,247,0.08)",
+    },
+  };
+
+  const skin = toneMap[tone] || toneMap.default;
+
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        border: `1px solid ${skin.border}`,
+        background: skin.bg,
+        borderRadius: 16,
+        padding: "12px 14px",
+        height: "100%",
+      }}
+    >
+      <div
+        style={{
+          color: PAGE.subtext,
+          fontSize: 12,
+          lineHeight: 1.3,
+          whiteSpace: "normal",
+          wordBreak: "normal",
+          overflowWrap: "break-word",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          color: PAGE.text,
+          fontWeight: 900,
+          fontSize: 20,
+          lineHeight: 1.2,
+          marginTop: 6,
+          whiteSpace: "normal",
+          wordBreak: "normal",
+          overflowWrap: "break-word",
+        }}
+      >
+        {value}
+      </div>
+      {subvalue ? (
+        <div
+          style={{
+            color: PAGE.subtext,
+            fontSize: 12,
+            marginTop: 6,
+            lineHeight: 1.35,
+            whiteSpace: "normal",
+            wordBreak: "normal",
+            overflowWrap: "break-word",
+          }}
+        >
+          {subvalue}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function InfoLine({ label, value }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(110px, 140px) minmax(0, 1fr)",
+        gap: 10,
+        alignItems: "start",
+      }}
+    >
+      <div style={{ color: PAGE.subtext, fontSize: 12 }}>{label}</div>
+      <div
+        style={{
+          color: PAGE.text,
+          fontWeight: 800,
+          lineHeight: 1.4,
+          whiteSpace: "normal",
+          wordBreak: "normal",
+          overflowWrap: "break-word",
+        }}
+      >
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
+function SortButton({ active, children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        height: 34,
+        padding: "0 12px",
+        borderRadius: 12,
+        border: `1px solid ${active ? "rgba(56,189,248,0.34)" : PAGE.border}`,
+        background: active ? "rgba(56,189,248,0.14)" : "rgba(255,255,255,0.04)",
+        color: PAGE.text,
+        fontWeight: 900,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LegendList({ items, suffix = "" }) {
+  return (
+    <div style={{ display: "grid", gap: 10, width: "100%", minWidth: 0 }}>
+      {(items || []).map((item, idx) => (
+        <div
+          key={`${item.label}-${idx}`}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "14px minmax(0, 1fr) auto",
+            gap: 10,
+            alignItems: "start",
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: 99,
+              background: COLORS[idx % COLORS.length],
+              display: "inline-block",
+              marginTop: 3,
+            }}
+          />
+          <div
+            title={item.label}
+            style={{
+              color: PAGE.text,
+              fontWeight: 700,
+              minWidth: 0,
+              lineHeight: 1.35,
+              whiteSpace: "normal",
+              wordBreak: "normal",
+              overflowWrap: "break-word",
+            }}
+          >
+            {item.label}
+          </div>
+          <div
+            style={{
+              color: PAGE.subtext,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              paddingLeft: 4,
+            }}
+          >
+            {item.value}
+            {suffix}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HorizontalBarChart({ rows, valueKey = "value", unit = "", onRowClick }) {
+  const maxValue = Math.max(1, ...rows.map((r) => Number(r?.[valueKey] || 0)));
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {rows.map((row, idx) => {
+        const value = Number(row?.[valueKey] || 0);
+        const width = `${(value / maxValue) * 100}%`;
+
+        return (
+          <button
+            key={`${row.label}-${idx}`}
+            onClick={() => onRowClick?.(row)}
+            style={{
+              border: `1px solid ${PAGE.border}`,
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: 14,
+              padding: 10,
+              textAlign: "left",
+              cursor: onRowClick ? "pointer" : "default",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) auto",
+                gap: 10,
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  color: PAGE.text,
+                  fontWeight: 800,
+                  minWidth: 0,
+                  whiteSpace: "normal",
+                  wordBreak: "normal",
+                  overflowWrap: "break-word",
+                }}
+              >
+                {row.label}
+              </div>
+              <div style={{ color: PAGE.subtext, fontWeight: 800, whiteSpace: "nowrap" }}>
+                {value}
+                {unit}
+              </div>
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                height: 10,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.08)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width,
+                  minWidth: value > 0 ? 10 : 0,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: COLORS[idx % COLORS.length],
+                }}
+              />
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MiniTrendChart({ rows }) {
+  const maxValue = Math.max(1, ...rows.map((r) => Number(r?.value || 0)));
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`,
+        gap: 10,
+        alignItems: "end",
+        height: 220,
+      }}
+    >
+      {rows.map((row, idx) => {
+        const value = Number(row?.value || 0);
+        const h = `${(value / maxValue) * 100}%`;
+
+        return (
+          <div
+            key={`${row.label}-${idx}`}
+            style={{
+              display: "grid",
+              gridTemplateRows: "auto 1fr auto",
+              gap: 8,
+              height: "100%",
+              alignItems: "end",
+            }}
+          >
+            <div style={{ textAlign: "center", color: PAGE.text, fontWeight: 800, fontSize: 11 }}>{value}</div>
+
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "end",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: h,
+                  minHeight: value > 0 ? 10 : 0,
+                  borderRadius: 999,
+                  background: PAGE.accent,
+                  boxShadow: `0 0 12px ${PAGE.accent}`,
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                textAlign: "center",
+                color: PAGE.subtext,
+                fontSize: 11,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {row.label}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActiveAlarmBoard({ rows, onFocus, onClear }) {
+  if (!rows.length) {
+    return <Typography sx={{ color: PAGE.subtext }}>No active live alarms right now.</Typography>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          style={{
+            border: `1px solid ${PAGE.border}`,
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: 16,
+            padding: 12,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) auto",
+              gap: 10,
+              alignItems: "start",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  color: PAGE.text,
+                  fontWeight: 900,
+                  lineHeight: 1.3,
+                  whiteSpace: "normal",
+                  wordBreak: "normal",
+                  overflowWrap: "break-word",
+                }}
+              >
+                {row.unitName}
+              </div>
+              <div style={{ color: PAGE.subtext, fontSize: 12, marginTop: 4 }}>
+                {row.stationName ? `Station ${row.stationName}` : "Unit Level"}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Chip size="small" label={row.category || "Alarm"} variant="outlined" color="warning" />
+              <Chip size="small" label={row.severity || "LOW"} variant="outlined" color={severityChipColor(row.severity)} />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Subject</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.reason || "—"}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Started</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{formatTs(row.startISO)}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Active Time</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.durationLabel}</div>
+            </div>
+            <div>
+              <div style={{ color: PAGE.muted, fontSize: 11 }}>Shift</div>
+              <div style={{ color: PAGE.text, fontWeight: 800 }}>{row.shiftKey ? `Shift ${row.shiftKey}` : "—"}</div>
+            </div>
+          </div>
+
+          {row.text ? (
+            <div
+              style={{
+                border: `1px solid ${PAGE.borderSoft}`,
+                background: "rgba(255,255,255,0.02)",
+                borderRadius: 12,
+                padding: 10,
+                color: PAGE.subtext,
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              {row.text}
+            </div>
+          ) : null}
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Button variant="outlined" onClick={() => onFocus?.(row.unitId)}>
+              Focus Unit
+            </Button>
+            <Button variant="outlined" color="warning" startIcon={<WarningAmberRoundedIcon />} onClick={() => onClear?.(row.unitId)}>
+              Clear Alarm
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SessionHistory({
+  sessionHistory,
+  filteredHistory,
+  search,
+  setSearch,
+  sevFilter,
+  setSevFilter,
+  typeFilter,
+  setTypeFilter,
+  onClear,
+  onResetFilters,
+  onClickItem,
+  mobileSizing,
+}) {
+  return (
+    <Box sx={{ width: "100%", minWidth: 0 }}>
+      <Stack spacing={1.1} sx={{ width: "100%" }}>
+        <TextField
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search unit / station / subject / type"
+          fullWidth
+          size={mobileSizing ? "medium" : "small"}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchRoundedIcon />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            "& .MuiInputBase-root": {
+              bgcolor: "rgba(255,255,255,0.03)",
+              borderRadius: 2,
+            },
+          }}
+        />
+
+        <Stack direction={mobileSizing ? "column" : "row"} spacing={1}>
+          <FormControl size={mobileSizing ? "medium" : "small"} sx={{ flex: 1 }}>
+            <Select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
+              <MenuItem value="ALL">All Severities</MenuItem>
+              <MenuItem value={SEVERITY.HIGH}>HIGH</MenuItem>
+              <MenuItem value={SEVERITY.MED}>MED</MenuItem>
+              <MenuItem value={SEVERITY.LOW}>LOW</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size={mobileSizing ? "medium" : "small"} sx={{ flex: 1 }}>
+            <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+              <MenuItem value="ALL">All Types</MenuItem>
+              {ALARM_TYPE_CATALOG.map((item) => (
+                <MenuItem key={item.code} value={item.label}>
+                  {item.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
+
+        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+          <Button variant="outlined" onClick={onResetFilters} startIcon={<RestartAltRoundedIcon />}>
+            Reset
+          </Button>
+          <Button variant="outlined" color="warning" onClick={onClear}>
+            Clear Live History
+          </Button>
+        </Stack>
+      </Stack>
+
+      <Divider sx={{ my: 1.4, borderColor: PAGE.borderSoft }} />
+
+      {filteredHistory.length === 0 ? (
+        <Typography sx={{ color: PAGE.subtext, fontSize: mobileSizing ? 14 : 13 }}>
+          {sessionHistory.length === 0 ? "No live alarm sessions in the last 24 hours." : "No results for current filters."}
+        </Typography>
+      ) : (
+        <Stack spacing={1.2}>
+          {filteredHistory.map((n) => (
+            <Paper
+              key={n.id}
+              elevation={0}
+              onClick={() => onClickItem(n)}
+              sx={{
+                p: mobileSizing ? 1.4 : 1.2,
+                borderRadius: 3,
+                cursor: "pointer",
+                bgcolor: "rgba(255,255,255,0.03)",
+                border: `1px solid ${PAGE.borderSoft}`,
+                transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease",
+                "&:hover": {
+                  transform: "translateY(-1px)",
+                  bgcolor: "rgba(255,255,255,0.045)",
+                  borderColor: "rgba(255,255,255,0.12)",
+                },
+              }}
+            >
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      sx={{
+                        color: PAGE.text,
+                        fontWeight: 900,
+                        fontSize: mobileSizing ? 15 : 13,
+                        lineHeight: 1.3,
+                        whiteSpace: "normal",
+                        wordBreak: "normal",
+                        overflowWrap: "break-word",
+                      }}
+                    >
+                      {n.unitName || "—"}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        color: PAGE.subtext,
+                        fontSize: mobileSizing ? 13 : 12,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      Live Alarm Session
+                    </Typography>
+                  </Box>
+
+                  <Stack direction="row" spacing={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    <Chip
+                      size="small"
+                      label={n.status === "ACTIVE" ? "ACTIVE" : "CLOSED"}
+                      color={n.status === "ACTIVE" ? "warning" : "default"}
+                      variant="outlined"
+                    />
+                    <Chip size="small" label={n.severity || "—"} color={severityChipColor(n.severity)} variant="outlined" />
+                  </Stack>
+                </Stack>
+
+                <Stack direction="row" spacing={0.8} sx={{ flexWrap: "wrap" }}>
+                  {n.category ? <Chip size="small" label={n.category} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                  {n.reason ? <Chip size="small" label={n.reason} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                  {n.shiftKey ? <Chip size="small" label={`Shift ${n.shiftKey}`} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
+                  {n.stationName ? (
+                    <Chip size="small" label={`Station ${n.stationName}`} variant="outlined" sx={{ color: PAGE.muted }} />
+                  ) : null}
+                  {n.sourceType ? (
+                    <Chip size="small" label={n.sourceType} variant="outlined" sx={{ color: PAGE.muted }} />
+                  ) : null}
+                </Stack>
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: mobileSizing ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                    gap: 1,
+                  }}
+                >
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Start</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{formatTs(n.startISO)}</Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>End</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{n.endISO ? formatTs(n.endISO) : "Still active"}</Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Duration</Typography>
+                    <Typography sx={{ color: PAGE.text, fontWeight: 800, fontSize: 12 }}>{n.durationLabel}</Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography sx={{ color: PAGE.muted, fontSize: 11 }}>Business Day</Typography>
+                    <Typography sx={{ color: PAGE.text, fontSize: 12 }}>{n.businessDate || "—"}</Typography>
+                  </Box>
+                </Box>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
+      )}
+    </Box>
+  );
+}
 
 function LabelTag3D({ text, dotColor, active, unitSize, zoomDist }) {
   const groupRef = useRef(null);
@@ -309,6 +1385,7 @@ function AlarmPulse({ w, h, enabled }) {
       ringRef.current.visible = false;
       return;
     }
+
     ringRef.current.visible = true;
     const t = state.clock.getElapsedTime();
     const k = 0.88 + (Math.sin(t * 3.2) * 0.5 + 0.5) * 0.22;
@@ -324,18 +1401,16 @@ function AlarmPulse({ w, h, enabled }) {
   );
 }
 
-function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomDist, isDowntimeHeld, isAlarmHeld }) {
+function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomDist, isAlarmHeld }) {
   const { x, y, w, h } = unit.layout;
 
   const height = 0.12;
   const borderUp = isSelected ? 0.03 : 0;
 
   const baseColor = baseLineColor(unit.status);
-  const topColor = isDowntimeHeld || isAlarmHeld ? COLOR_YELLOW : baseColor;
-
+  const topColor = isAlarmHeld ? COLOR_YELLOW : baseColor;
   const unitSize = Math.max(w, h);
   const active = isSelected || isHovered || isAlarmHeld;
-
   const lift = clamp(0.38 + unitSize * 0.07, 0.48, 0.95);
 
   return (
@@ -369,7 +1444,7 @@ function UnitBox3D({ unit, isSelected, isHovered, onSelect, onHoverChange, zoomD
         <meshStandardMaterial color={topColor} transparent opacity={0.94} />
       </mesh>
 
-      <AlarmPulse w={w} h={h} enabled={!!isAlarmHeld && !isDowntimeHeld} />
+      <AlarmPulse w={w} h={h} enabled={!!isAlarmHeld} />
 
       <group position={[0, lift, 0]}>
         <LabelTag3D text={unit.name} dotColor={topColor} active={active} unitSize={unitSize} zoomDist={zoomDist} />
@@ -415,7 +1490,6 @@ function CadScene({
   bounds,
   isMobile,
   onZoomUpdate,
-  activeDowntimeMap,
   activeAlarmMap,
   focusUnitId,
   onFocusDone,
@@ -447,10 +1521,9 @@ function CadScene({
   };
 
   useEffect(() => {
-    if (!focusUnitId) return;
+    if (!focusUnitId || !controlsRef.current) return;
     const u = units.find((x) => x.id === focusUnitId);
     if (!u) return;
-    if (!controlsRef.current) return;
 
     const tx = u.layout.x + u.layout.w / 2;
     const tz = u.layout.y + u.layout.h / 2;
@@ -459,17 +1532,14 @@ function CadScene({
     const curT = [c.target.x, c.target.y, c.target.z];
     const curC = [camera.position.x, camera.position.y, camera.position.z];
 
-    const desiredTarget = [tx, 0, tz];
-    const desiredCam = [tx, curC[1], tz + 14];
-
     focusAnimRef.current = {
       active: true,
       t: 0,
       dur: 0.65,
       fromTarget: curT,
-      toTarget: desiredTarget,
+      toTarget: [tx, 0, tz],
       fromCam: curC,
-      toCam: desiredCam,
+      toCam: [tx, curC[1], tz + 14],
     };
   }, [camera.position.x, camera.position.y, camera.position.z, focusUnitId, units]);
 
@@ -490,20 +1560,20 @@ function CadScene({
     if (anim.active && controlsRef.current) {
       anim.t += delta;
       const k = easeInOut(anim.t / anim.dur);
-
       const lerp = (a, b) => a + (b - a) * k;
 
-      const nx = lerp(anim.fromTarget[0], anim.toTarget[0]);
-      const ny = lerp(anim.fromTarget[1], anim.toTarget[1]);
-      const nz = lerp(anim.fromTarget[2], anim.toTarget[2]);
+      controlsRef.current.target.set(
+        lerp(anim.fromTarget[0], anim.toTarget[0]),
+        lerp(anim.fromTarget[1], anim.toTarget[1]),
+        lerp(anim.fromTarget[2], anim.toTarget[2])
+      );
 
-      controlsRef.current.target.set(nx, ny, nz);
+      camera.position.set(
+        lerp(anim.fromCam[0], anim.toCam[0]),
+        lerp(anim.fromCam[1], anim.toCam[1]),
+        lerp(anim.fromCam[2], anim.toCam[2])
+      );
 
-      const cx = lerp(anim.fromCam[0], anim.toCam[0]);
-      const cy = lerp(anim.fromCam[1], anim.toCam[1]);
-      const cz = lerp(anim.fromCam[2], anim.toCam[2]);
-
-      camera.position.set(cx, cy, cz);
       controlsRef.current.update();
 
       if (anim.t >= anim.dur) {
@@ -512,8 +1582,6 @@ function CadScene({
       }
     }
   });
-
-  const zoomDist = zoomDistRef.current;
 
   return (
     <>
@@ -540,8 +1608,7 @@ function CadScene({
           isHovered={u.id === hoveredId}
           onSelect={onSelect}
           onHoverChange={onHoverChange}
-          zoomDist={zoomDist}
-          isDowntimeHeld={!!activeDowntimeMap[u.id]}
+          zoomDist={zoomDistRef.current}
           isAlarmHeld={!!activeAlarmMap[u.id]}
         />
       ))}
@@ -560,16 +1627,15 @@ function CadView({
   heightPx,
   isMobile,
   onZoomUpdate,
-  activeDowntimeMap,
   activeAlarmMap,
   focusUnitId,
   onFocusDone,
 }) {
   const bounds = useMemo(() => {
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
 
     units.forEach((u) => {
       const { x, y, w, h } = u.layout;
@@ -586,7 +1652,6 @@ function CadView({
   }, [units]);
 
   const headerH = 56;
-  const canvasInnerGutter = 10;
 
   return (
     <Box
@@ -614,19 +1679,17 @@ function CadView({
       >
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontWeight: 900, color: PAGE.text, lineHeight: 1.1 }} noWrap>
-            Plant 3 — Live Alarms
+            Plant 3 — Live Alarm Center
           </Typography>
           <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap>
-            Green/Red base • Yellow = alarm/downtime hold
+            Operator calls • Quality • Maintenance • Material • Supervisor
           </Typography>
         </Box>
 
-        <Typography sx={{ color: PAGE.subtext, fontSize: 12, whiteSpace: "nowrap" }}>
-          Pan / Zoom / Rotate
-        </Typography>
+        <Typography sx={{ color: PAGE.subtext, fontSize: 12, whiteSpace: "nowrap" }}>Pan / Zoom / Rotate</Typography>
       </Box>
 
-      <Box sx={{ height: `calc(100% - ${headerH}px)`, p: `${canvasInnerGutter}px`, boxSizing: "border-box", minHeight: 0 }}>
+      <Box sx={{ height: `calc(100% - ${headerH}px)`, p: 1.2, boxSizing: "border-box", minHeight: 0 }}>
         <Box
           sx={{
             borderRadius: 2,
@@ -651,7 +1714,6 @@ function CadView({
               bounds={bounds}
               isMobile={isMobile}
               onZoomUpdate={onZoomUpdate}
-              activeDowntimeMap={activeDowntimeMap}
               activeAlarmMap={activeAlarmMap}
               focusUnitId={focusUnitId}
               onFocusDone={onFocusDone}
@@ -663,125 +1725,21 @@ function CadView({
   );
 }
 
-function HistoryContent({
-  log,
-  filteredLog,
-  search,
-  setSearch,
-  sevFilter,
-  setSevFilter,
-  onClear,
-  onResetFilters,
-  onClickItem,
-  mobileSizing,
-}) {
-  return (
-    <Box sx={{ width: "100%", minWidth: 0 }}>
-      <Stack spacing={1.1} sx={{ width: "100%" }}>
-        <TextField
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search unit / text / reason"
-          fullWidth
-          size={mobileSizing ? "medium" : "small"}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchRoundedIcon />
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            "& .MuiInputBase-root": {
-              bgcolor: "rgba(255,255,255,0.03)",
-              borderRadius: 2,
-            },
-          }}
-        />
-
-        <FormControl size={mobileSizing ? "medium" : "small"} sx={{ width: "100%" }}>
-          <Select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
-            <MenuItem value="ALL">All Severities</MenuItem>
-            <MenuItem value={SEVERITY.HIGH}>HIGH</MenuItem>
-            <MenuItem value={SEVERITY.MED}>MED</MenuItem>
-            <MenuItem value={SEVERITY.LOW}>LOW</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-          <Button variant="outlined" onClick={onResetFilters} startIcon={<RestartAltRoundedIcon />}>
-            Reset
-          </Button>
-          <Button variant="outlined" color="warning" onClick={onClear}>
-            Clear History
-          </Button>
-        </Stack>
-      </Stack>
-
-      <Divider sx={{ my: 1.4, borderColor: PAGE.borderSoft }} />
-
-      {filteredLog.length === 0 ? (
-        <Typography sx={{ color: PAGE.subtext, fontSize: mobileSizing ? 14 : 13 }}>
-          {log.length === 0 ? "No alarms yet." : "No results for current filters."}
-        </Typography>
-      ) : (
-        <Stack spacing={1.2}>
-          {filteredLog.map((n) => (
-            <Paper
-              key={n.id}
-              elevation={0}
-              onClick={() => onClickItem(n)}
-              sx={{
-                p: mobileSizing ? 1.4 : 1.2,
-                borderRadius: 3,
-                cursor: "pointer",
-                bgcolor: "rgba(255,255,255,0.03)",
-                border: `1px solid ${PAGE.borderSoft}`,
-                transition: "transform 120ms ease, background 120ms ease, border-color 120ms ease",
-                "&:hover": {
-                  transform: "translateY(-1px)",
-                  bgcolor: "rgba(255,255,255,0.045)",
-                  borderColor: "rgba(255,255,255,0.12)",
-                },
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ color: PAGE.text, fontWeight: 900, fontSize: mobileSizing ? 15 : 13 }} noWrap>
-                    {n.unitName || "—"}
-                  </Typography>
-                  <Typography sx={{ color: PAGE.subtext, fontSize: mobileSizing ? 13 : 12 }}>
-                    {n.text || "—"}
-                  </Typography>
-
-                  <Stack direction="row" spacing={1} sx={{ mt: 0.9, flexWrap: "wrap" }}>
-                    {n.category ? <Chip size="small" label={n.category} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
-                    {n.reason ? <Chip size="small" label={n.reason} variant="outlined" sx={{ color: PAGE.muted }} /> : null}
-                  </Stack>
-
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 11, mt: 0.9 }}>
-                    {n.tsISO ? new Date(n.tsISO).toLocaleString() : "—"}
-                  </Typography>
-                </Box>
-
-                <Chip size="small" label={n.severity || "—"} color={severityChipColor(n.severity)} variant="outlined" />
-              </Stack>
-            </Paper>
-          ))}
-        </Stack>
-      )}
-    </Box>
-  );
+function alarmTypeIcon(type) {
+  if (type === "Supervisor") return <CampaignRoundedIcon fontSize="small" />;
+  if (type === "Maintenance") return <EngineeringRoundedIcon fontSize="small" />;
+  if (type === "Quality") return <VerifiedRoundedIcon fontSize="small" />;
+  return <Inventory2RoundedIcon fontSize="small" />;
 }
 
 export default function AlarmsPage() {
   const rawUnits = useMemo(() => getPlant3Units(), []);
 
   const units = useMemo(() => {
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
 
     rawUnits.forEach((u) => {
       const { x, y, w, h } = u.layout;
@@ -804,14 +1762,9 @@ export default function AlarmsPage() {
   }, [rawUnits]);
 
   const isMobile = useMediaQuery("(max-width: 900px)");
-  const isTablet = useMediaQuery("(min-width: 900px) and (max-width: 1199px)");
-
-  const pad = isMobile ? 12 : isTablet ? 14 : 18;
-  const framePad = isMobile ? 10 : isTablet ? 12 : 14;
-
-  const canvasH = isMobile ? 560 : isTablet ? 660 : 700;
-
-  const gridCols = isTablet || isMobile ? "1fr" : "1.28fr 0.72fr";
+  const isTablet = useMediaQuery("(min-width: 901px) and (max-width: 1279px)");
+  const isCompact = useMediaQuery("(max-width: 1360px)");
+  
 
   const { unread, log, pushAlarm, clearAll, startEngine } = useAlarmCenter();
 
@@ -826,43 +1779,94 @@ export default function AlarmsPage() {
   const [focusUnitId, setFocusUnitId] = useState(null);
   const selectedUnit = useMemo(() => units.find((u) => u.id === selectedId) || null, [units, selectedId]);
 
-  const [dtCategoryCode, setDtCategoryCode] = useState("");
-  const [dtReasonCode, setDtReasonCode] = useState("");
+  const [alarmType, setAlarmType] = useState("");
+  const [alarmSubject, setAlarmSubject] = useState("");
+  const [alarmDetails, setAlarmDetails] = useState("");
 
-  const selectedCategory = useMemo(
-    () => DOWNTIME_CATALOG.find((c) => c.code === dtCategoryCode) || null,
-    [dtCategoryCode]
+  const selectedAlarmType = useMemo(
+    () => ALARM_TYPE_CATALOG.find((c) => c.label === alarmType) || null,
+    [alarmType]
   );
-  const reasonsForCategory = useMemo(() => selectedCategory?.reasons || [], [selectedCategory]);
+  const subjectsForType = useMemo(() => selectedAlarmType?.subjects || [], [selectedAlarmType]);
 
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const lastSpokenIdRef = useRef(null);
 
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("ALL");
-
+  const [typeFilter, setTypeFilter] = useState("ALL");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [desktopSortKey, setDesktopSortKey] = useState("count");
 
-  const { activeDowntimeMap, activeAlarmMap } = useMemo(() => deriveActiveMapsFromLog(log || []), [log]);
-  const activeHoldIds = useMemo(() => Object.keys(activeDowntimeMap), [activeDowntimeMap]);
+  const { liveLog, activeAlarmMap, openAlarmStartMap, sessionHistory } = useMemo(() => deriveAlarmState(log || []), [log]);
+
+  const analytics = useMemo(
+    () => buildAlarmAnalytics(sessionHistory, activeAlarmMap, liveLog),
+    [sessionHistory, activeAlarmMap, liveLog]
+  );
+
   const activeAlarmIds = useMemo(() => Object.keys(activeAlarmMap), [activeAlarmMap]);
 
-  // ✅ Only printable items are visible in history (Resume is hidden)
-  const printableLog = useMemo(() => {
-    return (log || []).filter((n) => PRINTABLE_TYPES.has(String(n?.eventType || "")));
-  }, [log]);
-
-  const filteredLog = useMemo(() => {
+  const filteredHistory = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return printableLog.filter((n) => {
-      const sevOk = sevFilter === "ALL" ? true : n.severity === sevFilter;
-      const text = `${n.unitName || ""} ${n.text || ""} ${n.category || ""} ${n.reason || ""}`.toLowerCase();
-      const qOk = q.length === 0 ? true : text.includes(q);
-      return sevOk && qOk;
-    });
-  }, [printableLog, search, sevFilter]);
 
-  // Warm-up voices list for more reliable selection
+    return sessionHistory.filter((n) => {
+      const sevOk = sevFilter === "ALL" ? true : n.severity === sevFilter;
+      const typeOk = typeFilter === "ALL" ? true : n.category === typeFilter;
+      const text = [n.unitName, n.stationName, n.category, n.reason, n.shiftKey, n.sourceType, n.businessDate]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const qOk = q.length === 0 ? true : text.includes(q);
+      return sevOk && typeOk && qOk;
+    });
+  }, [sessionHistory, search, sevFilter, typeFilter]);
+
+  const selectedUnitDetail = useMemo(() => {
+    if (!selectedUnit) return null;
+    const rows = sessionHistory.filter((n) => n.unitId === selectedUnit.id);
+    const activeRows = rows.filter((n) => n.status === "ACTIVE");
+    const closedRows = rows.filter((n) => n.status === "CLOSED");
+
+    const totalMin = Math.round(rows.reduce((sum, item) => sum + Number(item.durationMs || 0), 0) / 60000);
+    const avgMin = closedRows.length
+      ? closedRows.reduce((sum, item) => sum + Number(item.durationMs || 0), 0) / closedRows.length / 60000
+      : 0;
+
+    const topReason = buildMixByField(rows, "reason", 1)[0]?.label || "—";
+    const topCategory = buildMixByField(rows, "category", 1)[0]?.label || "—";
+    const latest = [...rows].sort((a, b) => Date.parse(b.startISO || 0) - Date.parse(a.startISO || 0))[0] || null;
+
+    return {
+      totalSessions: rows.length,
+      activeSessions: activeRows.length,
+      closedSessions: closedRows.length,
+      totalMin,
+      avgMin,
+      topReason,
+      topCategory,
+      latest,
+    };
+  }, [selectedUnit, sessionHistory]);
+
+  const unitComparisonRows = useMemo(() => {
+    const rows = [...analytics.byUnit];
+    if (desktopSortKey === "minutes") {
+      rows.sort((a, b) => b.totalMinutes - a.totalMinutes);
+    } else if (desktopSortKey === "active") {
+      rows.sort((a, b) => b.activeCount - a.activeCount);
+    } else {
+      rows.sort((a, b) => b.count - a.count);
+    }
+    return rows;
+  }, [analytics.byUnit, desktopSortKey]);
+
+  const activeRows = useMemo(
+    () => sessionHistory.filter((n) => n.status === "ACTIVE").sort((a, b) => Number(b.durationMs || 0) - Number(a.durationMs || 0)),
+    [sessionHistory]
+  );
+
   useEffect(() => {
     try {
       window.speechSynthesis?.getVoices?.();
@@ -874,160 +1878,125 @@ export default function AlarmsPage() {
     }
   }, []);
 
-  // ✅ Speak for NEW incoming events (including Resume), but History will NOT show Resume.
   useEffect(() => {
     if (!ttsEnabled) return;
+    if (!Array.isArray(log) || log.length === 0) return;
 
-    const top = (log || [])[0];
+    const top = log[0];
     if (!top?.id) return;
-
     if (lastSpokenIdRef.current === top.id) return;
     lastSpokenIdRef.current = top.id;
 
     const type = String(top.eventType || "");
     const unit = top.unitName || "Unknown unit";
-    const cat = top.category || "";
+    const station = top.stationName ? `Station ${top.stationName}. ` : "";
+    const cat = top.category || "Alarm";
     const reason = top.reason || "";
 
-    if (type === EVENT_TYPE.DT_START) {
-      safeSpeak(`Downtime alert. Unit ${unit}. Reason: ${cat}. ${reason}.`, true, {
-        preferFemale: true,
-        lang: "en-US",
-        pitch: 1.05,
-      });
-      return;
-    }
-
     if (type === EVENT_TYPE.ALARM_RAISE) {
-      safeSpeak(`Live alarm. Unit ${unit}. ${cat}. ${reason}.`, true, {
+      safeSpeak(`Live alarm. ${cat}. Unit ${unit}. ${station}${reason}.`, true, {
         preferFemale: true,
         lang: "en-US",
         pitch: 1.05,
       });
-      return;
-    }
-
-    if (type === EVENT_TYPE.DT_END) {
-      safeSpeak(`Unit ${unit} resumed.`, true, { preferFemale: true, lang: "en-US", pitch: 1.05 });
       return;
     }
 
     if (type === EVENT_TYPE.ALARM_CLEAR) {
-      safeSpeak(`Alarm cleared. Unit ${unit}.`, true, { preferFemale: true, lang: "en-US", pitch: 1.05 });
+      safeSpeak(`Alarm cleared. Unit ${unit}. ${station}System back to normal.`, true, {
+        preferFemale: true,
+        lang: "en-US",
+        pitch: 1.05,
+      });
     }
   }, [log, ttsEnabled]);
 
-  const openDowntimeDialog = useCallback((unit) => {
+  const openAlarmDialog = useCallback((unit) => {
     if (!unit) return;
     setSelectedId(unit.id);
-    setDtCategoryCode("");
-    setDtReasonCode("");
+    setAlarmType("");
+    setAlarmSubject("");
+    setAlarmDetails("");
   }, []);
 
-  const applyDowntimeStart = useCallback(
-    async ({ unit, category, reason }) => {
+  const applyAlarmStart = useCallback(
+    ({ unit, category, subject, details }) => {
       const tsISO = new Date().toISOString();
 
-      postDowntimeStart({
-        payload: {
-          unitId: unit.id,
-          tsISO,
-          categoryCode: category.code,
-          reasonCode: reason.code,
-        },
-      });
-
-      const sev =
-        category.code === "MAINTENANCE" ? SEVERITY.HIGH : category.code === "QUALITY" ? SEVERITY.MED : SEVERITY.LOW;
-
-      const text = `Downtime — ${category.group}: ${reason.label}`;
-
-      // ✅ push only (speech is handled by "new log entry" effect)
-      pushAlarm({
-        id: makeId(),
+      const event = buildEventPayload({
+        unit,
         tsISO,
-        unitId: unit.id,
-        unitName: unit.name,
-        severity: sev,
-        category: category.group,
-        reason: reason.label,
-        text,
-        eventType: EVENT_TYPE.DT_START,
+        eventType: EVENT_TYPE.ALARM_RAISE,
+        severity: category.severity,
+        category: category.label,
+        categoryCode: category.code,
+        reason: subject,
+        reasonCode: subject.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+        text: details?.trim() || `${category.label} request: ${subject}`,
+        sourceType: SOURCE_TYPE.OPERATOR,
       });
 
+      pushAlarm(event);
       setFocusUnitId(unit.id);
-
       setSelectedId(null);
-      setDtCategoryCode("");
-      setDtReasonCode("");
+      setAlarmType("");
+      setAlarmSubject("");
+      setAlarmDetails("");
     },
     [pushAlarm]
   );
 
-  const applyDowntimeEnd = useCallback(
-    async (unitId) => {
-      const unit = units.find((u) => u.id === unitId);
-      if (!unit) return;
-
-      postDowntimeEnd({ payload: { unitId, tsISO: new Date().toISOString() } });
-
-      // ✅ push only (speech is handled by "new log entry" effect)
-      pushAlarm({
-        id: makeId(),
-        tsISO: new Date().toISOString(),
-        unitId: unit.id,
-        unitName: unit.name,
-        severity: SEVERITY.LOW,
-        category: "Resume",
-        reason: "Resume",
-        text: "Station resumed (downtime cleared).",
-        eventType: EVENT_TYPE.DT_END,
-      });
-    },
-    [pushAlarm, units]
-  );
-
-  const applyAlarmResume = useCallback(
+  const applyAlarmClear = useCallback(
     (unitId) => {
       const unit = units.find((u) => u.id === unitId);
       if (!unit) return;
 
-      // ✅ push only (speech is handled by "new log entry" effect)
-      pushAlarm({
-        id: makeId(),
-        tsISO: new Date().toISOString(),
-        unitId: unit.id,
-        unitName: unit.name,
-        severity: SEVERITY.LOW,
-        category: "Resume",
-        reason: "Alarm Resume",
-        text: "Live alarm cleared by operator.",
+      const startEvent = openAlarmStartMap[unitId] || null;
+      const tsISO = new Date().toISOString();
+      const durationMs = startEvent?.tsISO ? Math.max(0, Date.parse(tsISO) - Date.parse(startEvent.tsISO)) : 0;
+
+      const event = buildEventPayload({
+        unit,
+        tsISO,
         eventType: EVENT_TYPE.ALARM_CLEAR,
+        severity: SEVERITY.LOW,
+        category: startEvent?.category || "Alarm",
+        categoryCode: startEvent?.categoryCode || "ALARM",
+        reason: startEvent?.reason || "Alarm Cleared",
+        reasonCode: "ALARM_CLEARED",
+        text: `Alarm cleared. Active time ${formatDurationMs(durationMs)}.`,
+        sourceType: SOURCE_TYPE.OPERATOR,
+        linkedEventId: startEvent?.id || null,
       });
+
+      pushAlarm(event);
     },
-    [pushAlarm, units]
+    [openAlarmStartMap, pushAlarm, units]
   );
 
-  // No-confirm: apply downtime start when both selected
-  useEffect(() => {
-    if (!selectedUnit) return;
-    if (!dtCategoryCode || !dtReasonCode) return;
+  const handleSubmitAlarm = useCallback(() => {
+    if (!selectedUnit || !selectedAlarmType || !alarmSubject) return;
+    applyAlarmStart({
+      unit: selectedUnit,
+      category: selectedAlarmType,
+      subject: alarmSubject,
+      details: alarmDetails,
+    });
+  }, [selectedUnit, selectedAlarmType, alarmSubject, alarmDetails, applyAlarmStart]);
 
-    const category = DOWNTIME_CATALOG.find((c) => c.code === dtCategoryCode) || null;
-    const reason = category?.reasons?.find((r) => r.code === dtReasonCode) || null;
+  const pad = isMobile ? 12 : isTablet ? 14 : 18;
+  const framePad = isMobile ? 10 : isTablet ? 12 : 14;
+  const canvasH = isMobile ? 560 : isTablet ? 640 : 760;
+  const gridCols = isTablet || isMobile ? "1fr" : "minmax(0, 1.35fr) minmax(420px, 0.95fr)";
 
-    if (!category || !reason) return;
-
-    if (activeDowntimeMap[selectedUnit.id]) {
-      safeSpeak(`Unit ${selectedUnit.name} is already in downtime.`, ttsEnabled, { preferFemale: true });
-      setSelectedId(null);
-      setDtCategoryCode("");
-      setDtReasonCode("");
-      return;
-    }
-
-    applyDowntimeStart({ unit: selectedUnit, category, reason });
-  }, [activeDowntimeMap, applyDowntimeStart, dtCategoryCode, dtReasonCode, selectedUnit, ttsEnabled]);
+  const typeQuickCards = useMemo(
+    () =>
+      ALARM_TYPE_CATALOG.map((item) => ({
+        ...item,
+        count: analytics.byCategory.find((x) => x.label === item.label)?.value || 0,
+      })),
+    [analytics.byCategory]
+  );
 
   const frameSx = useMemo(
     () => ({
@@ -1049,69 +2018,152 @@ export default function AlarmsPage() {
       <Box
         sx={{
           width: "100%",
-          maxWidth: 1460,
+          maxWidth: 1560,
           mx: "auto",
-          border: `1px solid ${PAGE.borderSoft}`,
-          borderRadius: 4,
-          bgcolor: "rgba(255,255,255,0.015)",
-          boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
-          overflow: "hidden",
+          display: "grid",
+          gap: 1.5,
         }}
       >
-        <Box sx={{ p: `${framePad}px`, boxSizing: "border-box" }}>
-          <Box
-            sx={{
-              width: "100%",
-              display: "grid",
-              gridTemplateColumns: gridCols,
-              gap: `${framePad}px`,
-              alignItems: "stretch",
-              minHeight: 0,
-            }}
-          >
-            <Box sx={{ minHeight: 0, minWidth: 0 }}>
-              <CadView
-                units={units}
-                selectedId={selectedId}
-                hoveredId={hoveredId}
-                onHoverChange={setHoveredId}
-                onSelect={openDowntimeDialog}
-                heightPx={canvasH}
-                isMobile={isMobile}
-                onZoomUpdate={setZoomDist}
-                activeDowntimeMap={activeDowntimeMap}
-                activeAlarmMap={activeAlarmMap}
-                focusUnitId={focusUnitId}
-                onFocusDone={() => setFocusUnitId(null)}
-              />
+        <Box sx={{ display: "grid", gap: 0.5 }}>
+          <Typography sx={{ color: PAGE.text, fontWeight: 900, fontSize: isMobile ? 22 : 24 }}>
+            Live Alarm Center
+          </Typography>
+          <Typography sx={{ color: PAGE.subtext }}>
+            Alarm requests only. Downtime is handled in a separate downtime workflow.
+          </Typography>
+        </Box>
 
-              <Box
-                sx={{
-                  mt: 1.2,
-                  px: 0.5,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 1.2,
-                  flexWrap: "wrap",
-                  color: PAGE.subtext,
-                  fontSize: 12,
-                }}
-              >
-                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                  <span>Zoom: {zoomDist ? Math.round(zoomDist) : "—"}</span>
-                  <span>Units: {units.length}</span>
-                  <span>Downtime: {activeHoldIds.length}</span>
-                  <span>Live Alarm: {activeAlarmIds.length}</span>
-                  <span>Unread: {unread}</span>
-                </Box>
+        <SectionGrid min={180} gap={10}>
+          <KpiCard label="Total Alarm Sessions" value={formatNumber(analytics.total)} subvalue="24h live memory" tone="accent" />
+          <KpiCard
+            label="Active Live Alarms"
+            value={formatNumber(analytics.active)}
+            subvalue={`Units in alarm ${activeAlarmIds.length}`}
+            tone={pickToneByCount(analytics.active)}
+          />
+          <KpiCard label="Closed Alarms" value={formatNumber(analytics.closed)} subvalue="Resolved alarm sessions" tone="success" />
+          <KpiCard label="Avg Alarm Duration" value={formatMinutes(analytics.avgAlarmMin)} subvalue="Closed alarms only" tone="warn" />
+          <KpiCard
+            label="Latest Event"
+            value={analytics.latestLive?.category || "—"}
+            subvalue={analytics.latestLive?.reason || "No recent event"}
+            tone="default"
+          />
+          <KpiCard label="Unread" value={formatNumber(unread)} subvalue={`Live buffer ${formatNumber(liveLog.length)}`} tone="purple" />
+        </SectionGrid>
 
-                <Stack direction="row" spacing={1} alignItems="center">
-                  {isMobile ? (
-                    <Tooltip title="Open history" arrow>
+        <SectionGrid min={220} gap={10}>
+          {typeQuickCards.map((item) => (
+            <Card
+              key={item.code}
+              title={item.label}
+              subtitle="Live alarm type"
+              tone={item.code === "MAINTENANCE" ? "danger" : item.code === "QUALITY" ? "warn" : item.code === "SUPERVISOR" ? "accent" : "success"}
+              right={
+                <div
+                  style={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 12,
+                    border: `1px solid ${PAGE.border}`,
+                    background: "rgba(255,255,255,0.05)",
+                    color: PAGE.text,
+                  }}
+                >
+                  {alarmTypeIcon(item.label)}
+                </div>
+              }
+            >
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ color: PAGE.text, fontWeight: 900, fontSize: 22 }}>{formatNumber(item.count)}</div>
+                <div style={{ color: PAGE.subtext, fontSize: 12 }}>Events in the last 24h</div>
+              </div>
+            </Card>
+          ))}
+        </SectionGrid>
+
+        <Box
+          sx={{
+            width: "100%",
+            border: `1px solid ${PAGE.borderSoft}`,
+            borderRadius: 4,
+            bgcolor: "rgba(255,255,255,0.015)",
+            boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+            overflow: "hidden",
+          }}
+        >
+          <Box sx={{ p: `${framePad}px`, boxSizing: "border-box" }}>
+            <Box
+              sx={{
+                width: "100%",
+                display: "grid",
+                gridTemplateColumns: gridCols,
+                gap: `${framePad}px`,
+                alignItems: "stretch",
+                minHeight: 0,
+              }}
+            >
+              <Box sx={{ minHeight: 0, minWidth: 0 }}>
+                <CadView
+                  units={units}
+                  selectedId={selectedId}
+                  hoveredId={hoveredId}
+                  onHoverChange={setHoveredId}
+                  onSelect={openAlarmDialog}
+                  heightPx={canvasH}
+                  isMobile={isMobile}
+                  onZoomUpdate={setZoomDist}
+                  activeAlarmMap={activeAlarmMap}
+                  focusUnitId={focusUnitId}
+                  onFocusDone={() => setFocusUnitId(null)}
+                />
+
+                <Box
+                  sx={{
+                    mt: 1.2,
+                    px: 0.5,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1.2,
+                    flexWrap: "wrap",
+                    color: PAGE.subtext,
+                    fontSize: 12,
+                  }}
+                >
+                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                    <span>Zoom: {zoomDist ? Math.round(zoomDist) : "—"}</span>
+                    <span>Units: {units.length}</span>
+                    <span>Active Alarm: {activeAlarmIds.length}</span>
+                    <span>Sessions: {sessionHistory.length}</span>
+                    <span>Buffer 24h: {liveLog.length}</span>
+                    <span>Unread: {unread}</span>
+                  </Box>
+
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {isMobile ? (
+                      <Tooltip title="Open history" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => setHistoryOpen(true)}
+                          sx={{
+                            color: "rgba(255,255,255,0.78)",
+                            border: `1px solid ${PAGE.borderSoft}`,
+                            borderRadius: 2,
+                            bgcolor: "rgba(255,255,255,0.03)",
+                          }}
+                        >
+                          <HistoryRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    ) : null}
+
+                    <Tooltip title={ttsEnabled ? "TTS enabled" : "TTS muted"} arrow>
                       <IconButton
                         size="small"
-                        onClick={() => setHistoryOpen(true)}
+                        onClick={() => setTtsEnabled((v) => !v)}
                         sx={{
                           color: "rgba(255,255,255,0.78)",
                           border: `1px solid ${PAGE.borderSoft}`,
@@ -1119,168 +2171,273 @@ export default function AlarmsPage() {
                           bgcolor: "rgba(255,255,255,0.03)",
                         }}
                       >
-                        <HistoryRoundedIcon fontSize="small" />
+                        {ttsEnabled ? <VolumeUpRoundedIcon fontSize="small" /> : <VolumeOffRoundedIcon fontSize="small" />}
                       </IconButton>
                     </Tooltip>
-                  ) : null}
 
-                  <Tooltip title={ttsEnabled ? "TTS enabled" : "TTS muted"} arrow>
-                    <IconButton
-                      size="small"
-                      onClick={() => setTtsEnabled((v) => !v)}
-                      sx={{
-                        color: "rgba(255,255,255,0.78)",
-                        border: `1px solid ${PAGE.borderSoft}`,
-                        borderRadius: 2,
-                        bgcolor: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      {ttsEnabled ? <VolumeUpRoundedIcon fontSize="small" /> : <VolumeOffRoundedIcon fontSize="small" />}
-                    </IconButton>
-                  </Tooltip>
-
-                  <Tooltip title="Reset filters" arrow>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setSearch("");
-                        setSevFilter("ALL");
-                      }}
-                      sx={{
-                        color: "rgba(255,255,255,0.78)",
-                        border: `1px solid ${PAGE.borderSoft}`,
-                        borderRadius: 2,
-                        bgcolor: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <RestartAltRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
+                    <Tooltip title="Reset filters" arrow>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setSearch("");
+                          setSevFilter("ALL");
+                          setTypeFilter("ALL");
+                        }}
+                        sx={{
+                          color: "rgba(255,255,255,0.78)",
+                          border: `1px solid ${PAGE.borderSoft}`,
+                          borderRadius: 2,
+                          bgcolor: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <RestartAltRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                </Box>
               </Box>
 
-              {(activeHoldIds.length || activeAlarmIds.length) ? (
-                <Stack
-                  direction="row"
-                  spacing={1.2}
+              <Box sx={{ display: "grid", gap: 1.2, minWidth: 0, alignContent: "start" }}>
+                <Card
+                  title="Active Alarm Board"
+                  subtitle="Operational live queue"
+                  tone="danger"
+                  right={
+                    <div style={{ color: PAGE.subtext, fontWeight: 800, fontSize: 12 }}>
+                      {formatNumber(activeRows.length)} active
+                    </div>
+                  }
+                >
+                  <ActiveAlarmBoard
+                    rows={activeRows.slice(0, 6)}
+                    onFocus={(unitId) => setFocusUnitId(unitId)}
+                    onClear={(unitId) => applyAlarmClear(unitId)}
+                  />
+                </Card>
+
+                <Card
+                  title="Alarm Trend"
+                  subtitle="Hourly alarm starts across the last 12 hours"
+                  tone="accent"
+                >
+                  <MiniTrendChart rows={analytics.hourlyTrend} />
+                </Card>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+
+        <SectionGrid min={360}>
+          <Card
+            title="Top Units by Alarm Load"
+            subtitle="Which units are generating the most live alarm traffic"
+            tone="accent"
+            right={
+              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                <SortButton active={desktopSortKey === "count"} onClick={() => setDesktopSortKey("count")}>
+                  Count
+                </SortButton>
+                <SortButton active={desktopSortKey === "active"} onClick={() => setDesktopSortKey("active")}>
+                  Active
+                </SortButton>
+                <SortButton active={desktopSortKey === "minutes"} onClick={() => setDesktopSortKey("minutes")}>
+                  Minutes
+                </SortButton>
+              </Stack>
+            }
+          >
+            <HorizontalBarChart
+              rows={unitComparisonRows.map((row) => ({
+                ...row,
+                label: row.label,
+                value: desktopSortKey === "minutes" ? row.totalMinutes : desktopSortKey === "active" ? row.activeCount : row.count,
+              }))}
+              valueKey="value"
+              unit={desktopSortKey === "minutes" ? " min" : ""}
+              onRowClick={(row) => setFocusUnitId(row.id)}
+            />
+          </Card>
+
+          <Card
+            title="Top Alarm Subjects"
+            subtitle="Most repeated live alarm reasons"
+            tone="warn"
+          >
+            <HorizontalBarChart
+              rows={analytics.byReason.map((row) => ({
+                ...row,
+                value: row.value,
+              }))}
+              valueKey="value"
+              unit=""
+            />
+          </Card>
+        </SectionGrid>
+
+        <SectionGrid min={360}>
+          <Card
+            title="Alarm Type Distribution"
+            subtitle="Supervisor, maintenance, quality, and material call load"
+            tone="success"
+          >
+            <LegendList items={analytics.byCategory} suffix=" count" />
+          </Card>
+
+          <Card
+            title="Severity Distribution"
+            subtitle="Current live alarm severity mix"
+            tone="default"
+          >
+            <LegendList items={analytics.bySeverity} suffix=" count" />
+          </Card>
+        </SectionGrid>
+
+        <SectionGrid min={360}>
+          <Card
+            title="Recurring Alarm Subjects"
+            subtitle="Subjects that repeat enough to become preventive action candidates"
+            tone="success"
+          >
+            {analytics.repeatedHotspots.length ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                {analytics.repeatedHotspots.map((item, idx) => (
+                  <div
+                    key={`${item.label}-${idx}`}
+                    style={{
+                      border: `1px solid ${PAGE.border}`,
+                      background: "rgba(255,255,255,0.03)",
+                      borderRadius: 14,
+                      padding: 12,
+                      display: "grid",
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ color: PAGE.text, fontWeight: 900 }}>{item.label}</div>
+                    <div style={{ color: PAGE.subtext, fontSize: 12 }}>{formatNumber(item.value)} repeated calls</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Typography sx={{ color: PAGE.subtext }}>No recurring live alarm subject yet.</Typography>
+            )}
+          </Card>
+
+          <Card
+            title="Selected Unit Detail"
+            subtitle="Unit-focused alarm summary"
+            tone="default"
+          >
+            {!selectedUnit ? (
+              <Typography sx={{ color: PAGE.subtext }}>Select a unit from the 3D map.</Typography>
+            ) : (
+              <Box sx={{ display: "grid", gap: 1.5 }}>
+                <SectionGrid min={145} gap={10}>
+                  <KpiCard label="Alarm Sessions" value={formatNumber(selectedUnitDetail?.totalSessions || 0)} tone="accent" />
+                  <KpiCard
+                    label="Active"
+                    value={formatNumber(selectedUnitDetail?.activeSessions || 0)}
+                    tone={pickToneByCount(selectedUnitDetail?.activeSessions || 0)}
+                  />
+                  <KpiCard label="Closed" value={formatNumber(selectedUnitDetail?.closedSessions || 0)} tone="success" />
+                  <KpiCard label="Total Active/Closed Min" value={formatMinutes(selectedUnitDetail?.totalMin || 0)} tone="warn" />
+                </SectionGrid>
+
+                <Box
                   sx={{
-                    mt: 1.2,
-                    flexWrap: "wrap",
-                    "& .MuiButton-root": {
-                      minWidth: isMobile ? "100%" : "auto",
-                    },
+                    border: `1px solid ${PAGE.border}`,
+                    background: "rgba(255,255,255,0.03)",
+                    borderRadius: 2.5,
+                    p: 1.75,
+                    display: "grid",
+                    gap: 1.1,
                   }}
                 >
-                  {activeHoldIds.map((id) => {
-                    const u = units.find((x) => x.id === id);
-                    return (
-                      <Button key={`dt-${id}`} variant="outlined" color="warning" onClick={() => applyDowntimeEnd(id)}>
-                        Resume DT {u?.name || id}
-                      </Button>
-                    );
-                  })}
-
-                  {activeAlarmIds.map((id) => {
-                    const u = units.find((x) => x.id === id);
-                    return (
-                      <Button
-                        key={`al-${id}`}
-                        variant="outlined"
-                        color="warning"
-                        startIcon={<WarningAmberRoundedIcon />}
-                        onClick={() => applyAlarmResume(id)}
-                      >
-                        Resume Alarm {u?.name || id}
-                      </Button>
-                    );
-                  })}
-                </Stack>
-              ) : null}
-            </Box>
-
-            {!isMobile && !isTablet ? (
-              <Box
-                sx={{
-                  border: `1px solid ${PAGE.border}`,
-                  bgcolor: PAGE.panel,
-                  borderRadius: 3,
-                  overflow: "hidden",
-                  minHeight: 0,
-                  minWidth: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-                }}
-              >
-                <Box sx={{ p: 1.6, borderBottom: `1px solid ${PAGE.borderSoft}`, bgcolor: "rgba(255,255,255,0.02)" }}>
-                  <Typography sx={{ fontWeight: 900, fontSize: 14 }}>Alarm / Downtime History</Typography>
-                  <Typography sx={{ color: PAGE.subtext, fontSize: 12, mt: 0.4 }}>
-                    Click an item to focus the unit. (Resume events are hidden)
-                  </Typography>
-                </Box>
-
-                <Box sx={{ p: 1.6, overflowY: "auto", minHeight: 0 }}>
-                  <HistoryContent
-                    log={printableLog}
-                    filteredLog={filteredLog}
-                    search={search}
-                    setSearch={setSearch}
-                    sevFilter={sevFilter}
-                    setSevFilter={setSevFilter}
-                    onClear={clearAll}
-                    onResetFilters={() => {
-                      setSearch("");
-                      setSevFilter("ALL");
-                    }}
-                    onClickItem={(n) => {
-                      if (n?.unitId) setFocusUnitId(n.unitId);
-                    }}
-                    mobileSizing={false}
+                  <InfoLine label="Unit" value={selectedUnit?.name} />
+                  <InfoLine label="Top Type" value={selectedUnitDetail?.topCategory} />
+                  <InfoLine label="Top Subject" value={selectedUnitDetail?.topReason} />
+                  <InfoLine label="Latest Status" value={selectedUnitDetail?.latest?.status || "—"} />
+                  <InfoLine label="Latest Start" value={formatTs(selectedUnitDetail?.latest?.startISO)} />
+                  <InfoLine
+                    label="Latest End"
+                    value={selectedUnitDetail?.latest?.endISO ? formatTs(selectedUnitDetail?.latest?.endISO) : "Still active"}
                   />
                 </Box>
               </Box>
-            ) : null}
-          </Box>
+            )}
+          </Card>
+        </SectionGrid>
 
-          {isTablet ? (
-            <Box
-              sx={{
-                mt: `${framePad}px`,
-                border: `1px solid ${PAGE.border}`,
-                bgcolor: PAGE.panel,
-                borderRadius: 3,
-                overflow: "hidden",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+        {!isCompact ? (
+          <Card
+            title="Alarm Session History"
+            subtitle="24h live memory • tap item to focus unit"
+            tone="default"
+          >
+            <SessionHistory
+              sessionHistory={sessionHistory}
+              filteredHistory={filteredHistory}
+              search={search}
+              setSearch={setSearch}
+              sevFilter={sevFilter}
+              setSevFilter={setSevFilter}
+              typeFilter={typeFilter}
+              setTypeFilter={setTypeFilter}
+              onClear={clearAll}
+              onResetFilters={() => {
+                setSearch("");
+                setSevFilter("ALL");
+                setTypeFilter("ALL");
               }}
-            >
-              <Box sx={{ p: 1.6, borderBottom: `1px solid ${PAGE.borderSoft}`, bgcolor: "rgba(255,255,255,0.02)" }}>
-                <Typography sx={{ fontWeight: 900, fontSize: 14 }}>Alarm / Downtime History</Typography>
-                <Typography sx={{ color: PAGE.subtext, fontSize: 12, mt: 0.4 }}>
-                  Tap an item to focus the unit. (Resume events are hidden)
-                </Typography>
-              </Box>
-              <Box sx={{ p: 1.6 }}>
-                <HistoryContent
-                  log={printableLog}
-                  filteredLog={filteredLog}
-                  search={search}
-                  setSearch={setSearch}
-                  sevFilter={sevFilter}
-                  setSevFilter={setSevFilter}
-                  onClear={clearAll}
-                  onResetFilters={() => {
-                    setSearch("");
-                    setSevFilter("ALL");
+              onClickItem={(n) => {
+                if (n?.unitId) setFocusUnitId(n.unitId);
+              }}
+              mobileSizing={false}
+            />
+          </Card>
+        ) : (
+          <Card
+            title="Alarm Session History"
+            subtitle="24h live memory • tap item to focus unit"
+            tone="default"
+            right={
+              <Tooltip title="Open full history drawer" arrow>
+                <IconButton
+                  size="small"
+                  onClick={() => setHistoryOpen(true)}
+                  sx={{
+                    color: "rgba(255,255,255,0.78)",
+                    border: `1px solid ${PAGE.borderSoft}`,
+                    borderRadius: 2,
+                    bgcolor: "rgba(255,255,255,0.03)",
                   }}
-                  onClickItem={(n) => {
-                    if (n?.unitId) setFocusUnitId(n.unitId);
-                  }}
-                  mobileSizing
-                />
-              </Box>
-            </Box>
-          ) : null}
-        </Box>
+                >
+                  <InsightsRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            }
+          >
+            <SessionHistory
+              sessionHistory={sessionHistory}
+              filteredHistory={filteredHistory.slice(0, 8)}
+              search={search}
+              setSearch={setSearch}
+              sevFilter={sevFilter}
+              setSevFilter={setSevFilter}
+              typeFilter={typeFilter}
+              setTypeFilter={setTypeFilter}
+              onClear={clearAll}
+              onResetFilters={() => {
+                setSearch("");
+                setSevFilter("ALL");
+                setTypeFilter("ALL");
+              }}
+              onClickItem={(n) => {
+                if (n?.unitId) setFocusUnitId(n.unitId);
+              }}
+              mobileSizing
+            />
+          </Card>
+        )}
       </Box>
 
       <Drawer
@@ -1313,10 +2470,10 @@ export default function AlarmsPage() {
         >
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontWeight: 900, fontSize: 15 }} noWrap>
-              History
+              Live Alarm Sessions
             </Typography>
             <Typography sx={{ color: PAGE.subtext, fontSize: 12 }} noWrap>
-              Tap an item to focus unit (Resume hidden)
+              Last 24 hours
             </Typography>
           </Box>
 
@@ -1335,17 +2492,20 @@ export default function AlarmsPage() {
         </Box>
 
         <Box sx={{ p: 1.5, height: "calc(86dvh - 64px)", overflow: "auto" }}>
-          <HistoryContent
-            log={printableLog}
-            filteredLog={filteredLog}
+          <SessionHistory
+            sessionHistory={sessionHistory}
+            filteredHistory={filteredHistory}
             search={search}
             setSearch={setSearch}
             sevFilter={sevFilter}
             setSevFilter={setSevFilter}
+            typeFilter={typeFilter}
+            setTypeFilter={setTypeFilter}
             onClear={clearAll}
             onResetFilters={() => {
               setSearch("");
               setSevFilter("ALL");
+              setTypeFilter("ALL");
             }}
             onClickItem={(n) => {
               if (n?.unitId) setFocusUnitId(n.unitId);
@@ -1358,55 +2518,71 @@ export default function AlarmsPage() {
 
       <Dialog open={!!selectedUnit} onClose={() => setSelectedId(null)} maxWidth="sm" fullWidth>
         <Box sx={{ p: 2 }}>
-          <Typography sx={{ fontWeight: 900, mb: 1.5 }}>
-            Downtime — {selectedUnit?.name || "—"}
-          </Typography>
+          <Typography sx={{ fontWeight: 900, mb: 1.5 }}>Raise Live Alarm — {selectedUnit?.name || "—"}</Typography>
 
           <Typography sx={{ color: "text.secondary", fontSize: 13, mb: 1 }}>
-            Pick category, then reason. Selecting a reason applies immediately.
+            This page is for live alarm requests only. Downtime is handled separately.
           </Typography>
 
           <Divider sx={{ mb: 2 }} />
 
-          <Typography sx={{ fontWeight: 800, fontSize: 13, mb: 1 }}>Category</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mb: 1 }}>Alarm Type</Typography>
           <Select
-            value={dtCategoryCode}
+            value={alarmType}
             onChange={(e) => {
-              setDtCategoryCode(e.target.value);
-              setDtReasonCode("");
+              setAlarmType(e.target.value);
+              setAlarmSubject("");
             }}
             fullWidth
           >
-            {DOWNTIME_CATALOG.map((c) => (
-              <MenuItem key={c.code} value={c.code}>
-                {c.group}
+            {ALARM_TYPE_CATALOG.map((c) => (
+              <MenuItem key={c.code} value={c.label}>
+                {c.label}
               </MenuItem>
             ))}
           </Select>
 
-          <Typography sx={{ fontWeight: 800, fontSize: 13, mt: 2, mb: 1 }}>Reason</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mt: 2, mb: 1 }}>Subject</Typography>
           <Select
-            value={dtReasonCode}
-            onChange={(e) => setDtReasonCode(e.target.value)}
+            value={alarmSubject}
+            onChange={(e) => setAlarmSubject(e.target.value)}
             fullWidth
-            disabled={!dtCategoryCode}
+            disabled={!alarmType}
           >
-            {reasonsForCategory.map((r) => (
-              <MenuItem key={r.code} value={r.code}>
-                {r.label}
+            {subjectsForType.map((subject) => (
+              <MenuItem key={subject} value={subject}>
+                {subject}
               </MenuItem>
             ))}
           </Select>
+
+          <Typography sx={{ fontWeight: 800, fontSize: 13, mt: 2, mb: 1 }}>Details</Typography>
+          <TextField
+            value={alarmDetails}
+            onChange={(e) => setAlarmDetails(e.target.value)}
+            placeholder="Optional operator note"
+            fullWidth
+            multiline
+            minRows={3}
+          />
 
           <Stack direction="row" spacing={1.2} sx={{ mt: 2 }}>
             <Button variant="outlined" onClick={() => setSelectedId(null)} sx={{ flex: 1 }}>
               Close
             </Button>
+            <Button
+              variant="contained"
+              onClick={handleSubmitAlarm}
+              sx={{ flex: 1 }}
+              disabled={!alarmType || !alarmSubject}
+            >
+              Submit Alarm
+            </Button>
           </Stack>
 
-          {selectedUnit?.id && activeDowntimeMap[selectedUnit.id] ? (
+          {selectedUnit?.id && activeAlarmMap[selectedUnit.id] ? (
             <Box sx={{ mt: 1.5, color: "text.secondary", fontSize: 12 }}>
-              This unit is already in downtime. Use Resume DT button on the main page.
+              This unit already has an active live alarm. You can clear it from the Active Alarm Board.
             </Box>
           ) : null}
         </Box>

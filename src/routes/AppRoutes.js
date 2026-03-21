@@ -14,28 +14,29 @@ import DowntimePage from "../pages/DowntimePage";
 import AnalyticsPage from "../pages/AnalyticsPage";
 import CamerasPage from "../pages/CamerasPage";
 import ReportsPage from "../pages/ReportsPage";
+import ProductionPage from "../pages/ProductionPage";
+import ComponentsPage from "../pages/ComponentsPage";
 
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Public */}
       <Route path="/" element={<PreLoginPage />} />
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Protected */}
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/alarms" element={<AlarmsPage />} />
           <Route path="/downtime" element={<DowntimePage />} />
+          <Route path="/production" element={<ProductionPage />} />
+          <Route path="/components" element={<ComponentsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/cameras" element={<CamerasPage />} />
           <Route path="/reports" element={<ReportsPage />} />
         </Route>
       </Route>
 
-      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

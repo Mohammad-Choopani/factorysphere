@@ -1,4 +1,3 @@
-// src/components/layout/Topbar.js
 import React from "react";
 import {
   AppBar,
@@ -20,15 +19,13 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { useLocation, useNavigate } from "react-router-dom";
 import logo from "../../assets/logo.png";
 import useAuth from "../../auth/useAuth";
+import { getCurrentShiftKey, getCurrentShiftLabel } from "../../data/mock/plant3.units.mock";
 
-function getShiftInfo(now = new Date()) {
-  const h = now.getHours();
-  const m = now.getMinutes();
-  const minutes = h * 60 + m;
-
-  if (minutes >= 360 && minutes < 840) return { key: "A", label: "Shift A" };
-  if (minutes >= 840 && minutes < 1320) return { key: "B", label: "Shift B" };
-  return { key: "C", label: "Shift C" };
+function getShiftInfo() {
+  return {
+    key: getCurrentShiftKey(),
+    label: getCurrentShiftLabel(),
+  };
 }
 
 function BrandLogo({ size = 44 }) {
@@ -84,7 +81,6 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
   const shift = getShiftInfo();
 
   const handleLogout = () => {
-    // ✅ Hard-lock auth lifecycle: remove LS + emit AUTH_EVENT (same-tab sync)
     logout();
     navigate("/", { replace: true, state: { from: location.pathname } });
   };
@@ -110,7 +106,6 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
           px: { xs: 1, sm: 1.5, md: 2 },
         }}
       >
-        {/* Left */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.2, minWidth: 0 }}>
           <Tooltip
             title={
@@ -175,7 +170,6 @@ export default function Topbar({ isDesktop, isCollapsed, mobileOpen, onHamburger
           </Box>
         </Box>
 
-        {/* Right */}
         <Stack
           direction="row"
           spacing={1}
